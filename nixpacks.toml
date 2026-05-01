@@ -1,5 +1,0 @@
-[phases.setup]
-aptPkgs = ["libpq-dev", "postgresql-client"]
-
-[phases.install]
-cmds = ["pip install --no-cache-dir -r requirements.txt"]
