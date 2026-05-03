@@ -2150,8 +2150,10 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return ADMIN_BROADCAST
 
     elif data.startswith("adm_edit_"):
+        logger.info(f"Admin edit triggered: {data}")
         parts = data.split("_")
         lid, page = int(parts[2]), int(parts[3])
+        logger.info(f"Editing listing {lid}, page {page}")
         
         await query.answer()
         
@@ -2165,12 +2167,17 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not listing:
+            logger.warning(f"Listing {lid} not found")
             await query.answer("Обява не е намерена", show_alert=True)
             return ADMIN_MENU
         
+        logger.info(f"Listing found: {listing[0]}")
+        
         # Отправляем фото и текст
         photos = get_photos(listing)
-        caption = listing_text(listing, is_owner=True)
+        caption = listing_text(listing)
+        
+        logger.info(f"Photos: {len(photos) if photos else 0}")
         
         # Кнопки редактирования
         edit_btns = [
@@ -2183,30 +2190,38 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         
         chat_id = query.message.chat_id
+        logger.info(f"Sending to chat_id: {chat_id}")
         
         # Удаляем старое сообщение
         try:
             await query.message.delete()
+            logger.info("Old message deleted")
         except Exception as e:
             logger.warning(f"Could not delete admin listings message: {e}")
         
         # Отправляем новое через ctx.bot
-        if photos:
-            media_group = [InputMediaPhoto(media=photo) for photo in photos]
-            await ctx.bot.send_media_group(chat_id=chat_id, media=media_group)
-            await ctx.bot.send_message(
-                chat_id=chat_id,
-                text=caption,
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup(edit_btns)
-            )
-        else:
-            await ctx.bot.send_message(
-                chat_id=chat_id,
-                text=caption,
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup(edit_btns)
-            )
+        try:
+            if photos:
+                media_group = [InputMediaPhoto(media=photo) for photo in photos]
+                await ctx.bot.send_media_group(chat_id=chat_id, media=media_group)
+                logger.info("Media group sent")
+                await ctx.bot.send_message(
+                    chat_id=chat_id,
+                    text=caption,
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(edit_btns)
+                )
+                logger.info("Caption with buttons sent")
+            else:
+                await ctx.bot.send_message(
+                    chat_id=chat_id,
+                    text=caption,
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(edit_btns)
+                )
+                logger.info("Message with buttons sent (no photos)")
+        except Exception as e:
+            logger.error(f"Error sending edit message: {e}", exc_info=True)
         
         return ADMIN_MENU
 
