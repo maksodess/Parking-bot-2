@@ -2546,13 +2546,18 @@ def main():
     # ── Global error handler ───────────────────────────────────
     async def error_handler(update, context):
         logger.error("Exception:", exc_info=context.error)
+        
+        # Игнорируем Conflict при деплое (два инстанса бота)
+        err_text = str(context.error)
+        if "Conflict" in err_text and "getUpdates" in err_text:
+            return
+        
         # Уведомляем администратора
         try:
-            err_text = str(context.error)[:200]
             upd_info = f"Update: {update}" if update else "No update"
             await context.bot.send_message(
                 ADMIN_ID,
-                f"🚨 *Ошибка бота:*\n`{err_text}`\n\n_{upd_info[:100]}_",
+                f"🚨 *Ошибка бота:*\n`{err_text[:200]}`\n\n_{upd_info[:100]}_",
                 parse_mode="Markdown"
             )
         except Exception:
