@@ -2153,13 +2153,13 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parts = data.split("_")
         lid, page = int(parts[2]), int(parts[3])
         
-        await query.answer()  # ДОБАВИЛ
+        await query.answer()
         
         # Сохраняем в user_data для возврата на правильную страницу
         ctx.user_data["adm_edit_page"] = page
         ctx.user_data["adm_edit_lid"] = lid
         
-        # Показываем объявление с кнопками редактирования (как в preview)
+        # Показываем объявление с кнопками редактирования
         conn = db()
         listing = conn.execute("SELECT * FROM listings WHERE id=?", (lid,)).fetchone()
         conn.close()
@@ -2168,11 +2168,11 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await query.answer("Обява не е намерена", show_alert=True)
             return ADMIN_MENU
         
-        # Отправляем фото и текст (как в ad_preview)
+        # Отправляем фото и текст
         photos = get_photos(listing)
         caption = listing_text(listing, is_owner=True)
         
-        # Кнопки редактирования как в preview
+        # Кнопки редактирования
         edit_btns = [
             [InlineKeyboardButton("✏️ Адрес",    callback_data=f"adm_editfield_address_{lid}")],
             [InlineKeyboardButton("✏️ Телефон",  callback_data=f"adm_editfield_phone_{lid}")],
@@ -2182,26 +2182,28 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("↩️ Назад",    callback_data=f"adm_listings_{page}")],
         ]
         
-        # Удаляем старое сообщение СНАЧАЛА
+        chat_id = query.message.chat_id
+        
+        # Удаляем старое сообщение
         try:
             await query.message.delete()
         except Exception as e:
             logger.warning(f"Could not delete admin listings message: {e}")
         
-        # ЗАТЕМ отправляем новое
+        # Отправляем новое через ctx.bot
         if photos:
-            # Отправляем media group с фото
             media_group = [InputMediaPhoto(media=photo) for photo in photos]
-            await query.message.reply_media_group(media=media_group)
-            # Затем текст с кнопками
-            await query.message.reply_text(
-                caption,
+            await ctx.bot.send_media_group(chat_id=chat_id, media=media_group)
+            await ctx.bot.send_message(
+                chat_id=chat_id,
+                text=caption,
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup(edit_btns)
             )
         else:
-            await query.message.reply_text(
-                caption,
+            await ctx.bot.send_message(
+                chat_id=chat_id,
+                text=caption,
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup(edit_btns)
             )
