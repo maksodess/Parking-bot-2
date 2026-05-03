@@ -961,7 +961,18 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
                 [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{listing_id}")],
             ]
             
-            if photos:
+            if photos and len(photos) > 1:
+                # Несколько фото - отправляем media group + текст с кнопками отдельно
+                media_group = [InputMediaPhoto(media=photo) for photo in photos]
+                await bot.send_media_group(user_id, media=media_group)
+                await bot.send_message(
+                    user_id,
+                    full_message,
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+            elif photos:
+                # Одно фото - отправляем с caption
                 await bot.send_photo(
                     user_id,
                     photo=photos[0],
@@ -970,6 +981,7 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
             else:
+                # Без фото
                 await bot.send_message(
                     user_id,
                     full_message,
