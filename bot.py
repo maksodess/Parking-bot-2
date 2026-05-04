@@ -19,12 +19,12 @@ from telegram import (
     InputMediaPhoto
 )
 from telegram.ext import (
-
-# Локализация
-from messages import t, get_user_lang, set_user_lang, detect_telegram_lang
     Application, CommandHandler, CallbackQueryHandler,
     MessageHandler, ConversationHandler, ContextTypes, filters
 )
+
+# Локализация
+from messages import t, get_user_lang, set_user_lang, detect_telegram_lang
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
 ADMIN_ID   = 5053888378
