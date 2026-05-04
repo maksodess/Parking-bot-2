@@ -25,7 +25,12 @@ from telegram.ext import (
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
 ADMIN_ID   = 5053888378
-DB_FILE    = "parking.db"
+
+# ── Paths configuration (Railway Volumes) ─────────────────
+DATA_DIR = os.environ.get("DATA_DIR", "/data")
+DB_FILE = os.path.join(DATA_DIR, "parking.db")
+PERSISTENCE_FILE = os.path.join(DATA_DIR, "bot_persistence.pkl")
+
 PAGE_SIZE  = 10
 MAX_LISTINGS_PER_USER = 10
 PHONE_RE   = re.compile(r'^\+?[0-9]{7,15}$')
@@ -2536,11 +2541,16 @@ async def toggle_favorite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+    # Создаём директорию для данных если не существует (для Railway Volume)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    logger.info(f"Data directory: {DATA_DIR}")
+    logger.info(f"Database file: {DB_FILE}")
+    
     init_db()
     
     # 🔴 FIX #1: Добавляем Persistence (предотвращает потерю данных платежей)
     from telegram.ext import PicklePersistence
-    persistence = PicklePersistence(filepath="bot_persistence.pkl")
+    persistence = PicklePersistence(filepath=PERSISTENCE_FILE)
     app = Application.builder().token(BOT_TOKEN).persistence(persistence).build()
 
     # ── Global error handler ───────────────────────────────────
@@ -2794,14 +2804,13 @@ def main():
     async def job_backup_db(context):
         """Раз в день: бэкап SQLite."""
         import shutil
+        import glob
         try:
-            backup_name = f"parking_backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.db"
+            backup_name = os.path.join(DATA_DIR, f"parking_backup_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.db")
             shutil.copy(DB_FILE, backup_name)
             # Оставляем только последние 3 бэкапа
-            import glob
-            backups = sorted(glob.glob("parking_backup_*.db"))
+            backups = sorted(glob.glob(os.path.join(DATA_DIR, "parking_backup_*.db")))
             for old in backups[:-3]:
-                import os
                 os.remove(old)
             logger.info(f"✅ Backup created: {backup_name}")
         except Exception as e:
