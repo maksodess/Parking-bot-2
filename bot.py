@@ -1438,10 +1438,6 @@ async def show_search_page(message, ctx, page=0):
     # Кнопки навигации
     nav_buttons = []
     
-    # Кнопка "Назад" если не первая страница
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton("◀️ Назад", callback_data=f"search_page_{page-1}"))
-    
     # Кнопка "Вперед" если не последняя страница
     if page < total_pages - 1:
         nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"search_page_{page+1}"))
@@ -2571,9 +2567,8 @@ async def show_my_listings_page(message, ctx, page=0):
     
     # Кнопки навигации
     nav_buttons = []
-    
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton("◀️ Назад", callback_data=f"my_page_{page-1}"))
+    # Кнопки навигации
+    nav_buttons = []
     
     if page < total_pages - 1:
         nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"my_page_{page+1}"))
@@ -2765,8 +2760,9 @@ async def show_favorites_page(message, ctx, page=0):
     
     # Навигация
     nav_buttons = []
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton("◀️ Назад", callback_data=f"fav_page_{page-1}"))
+    # Навигация
+    nav_buttons = []
+    
     if page < total_pages - 1:
         nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"fav_page_{page+1}"))
     
