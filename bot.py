@@ -453,22 +453,21 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if action == "mylistings":
         user_id = query.from_user.id
         conn = db()
-        rows = conn.execute("SELECT * FROM listings WHERE owner_id=? ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
+        rows = conn.execute("SELECT * FROM listings WHERE owner_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
         conn.close()
+        
         if not rows:
             await query.edit_message_text("Все още нямате обяви.", reply_markup=home_ikb())
             return MAIN_MENU
-        await query.edit_message_text(f"📁 Вашите обяви ({len(rows)}):", reply_markup=home_ikb())
-        for row in rows:
-            lid, active = row[0], row[12]
-            status  = "✅ Активна" if active else "⏸ Неактивна"
-            caption = listing_text(row) + f"\n{status}"
-            btns = [
-                [InlineKeyboardButton("✏️ Редактиране", callback_data=f"edit_{lid}"),
-                 InlineKeyboardButton("🗑 Изтрий",      callback_data=f"delete_{lid}")],
-            ]
-            kb = InlineKeyboardMarkup(btns)
-            await send_listing(query.message, caption, row, kb)
+        
+        # Сохраняем для пагинации
+        ctx.user_data["my_listings"] = rows
+        
+        await query.edit_message_text(f"📁 *Вашите обяви* ({len(rows)})", parse_mode="Markdown", reply_markup=home_ikb())
+        
+        # Показываем первую страницу
+        await show_my_listings_page(query.message, ctx, page=0)
+        
         return MAIN_MENU
 
     # Мои подписки
@@ -1643,6 +1642,31 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
         )
         return MAIN_MENU
 
+    # 🔴 АДМИН = БЕСПЛАТНО
+    if user_id == ADMIN_ID:
+        # Создаём подписку сразу без оплаты
+        import datetime
+        expires_at = (datetime.datetime.now() + datetime.timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+        
+        conn = db()
+        conn.execute(
+            "INSERT INTO search_subscriptions (user_id, search_type, action, lat, lon, radius, active, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
+            (user_id, params["search_type"], params["action"], 
+             params.get("lat"), params.get("lon"), params["radius"], expires_at)
+        )
+        conn.commit()
+        conn.close()
+        
+        await query.message.reply_text(
+            "✅ *Абонаментът е активиран!* (безплатно за администратор)\n\n"
+            "Ще получавате известия за нови обяви, които отговарят на вашите критерии.\n"
+            f"Валиден до: {expires_at[:10]}",
+            parse_mode="Markdown",
+            reply_markup=home_ikb()
+        )
+        return MAIN_MENU
+
     # Сохраняем параметры для оплаты
     ctx.user_data["pending_subscription"] = params
 
@@ -2503,8 +2527,37 @@ async def cmd_my(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Все още нямате обяви.", reply_markup=home_ikb())
         return MAIN_MENU
 
+    # Сохраняем в user_data для пагинации
+    ctx.user_data["my_listings"] = rows
+    
     await update.message.reply_text(f"📁 *Вашите обяви* ({len(rows)})", parse_mode="Markdown")
-    for row in rows:
+    
+    # Показываем первую страницу
+    await show_my_listings_page(update.message, ctx, page=0)
+    
+    return MAIN_MENU
+
+
+async def show_my_listings_page(message, ctx, page=0):
+    """Показывает страницу своих объявлений (5 штук)."""
+    ITEMS_PER_PAGE = 5
+    
+    rows = ctx.user_data.get("my_listings", [])
+    total = len(rows)
+    total_pages = math.ceil(total / ITEMS_PER_PAGE) if total > 0 else 1
+    
+    # Ограничиваем страницу
+    if page < 0:
+        page = 0
+    if page >= total_pages:
+        page = total_pages - 1
+    
+    start = page * ITEMS_PER_PAGE
+    end = start + ITEMS_PER_PAGE
+    page_listings = rows[start:end]
+    
+    # Отправляем объявления
+    for row in page_listings:
         lid, active = row[0], row[12]
         caption = listing_text(row)
         status = "✅ Активна" if active else "⏸ Неактивна"
@@ -2513,7 +2566,45 @@ async def cmd_my(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
              InlineKeyboardButton("🗑 Изтрий",      callback_data=f"delete_{lid}")],
         ]
         kb2 = InlineKeyboardMarkup(buttons)
-        await send_listing(update.message, f"{caption}\n\n{status}", row, kb2)
+        await send_listing(message, f"{caption}\n\n{status}", row, kb2)
+        await asyncio.sleep(0.05)  # Rate limiting
+    
+    # Кнопки навигации
+    nav_buttons = []
+    
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("◀️ Назад", callback_data=f"my_page_{page-1}"))
+    
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"my_page_{page+1}"))
+    
+    home_button = [InlineKeyboardButton("🏠 Начало", callback_data="go_home")]
+    
+    keyboard_rows = []
+    if nav_buttons:
+        keyboard_rows.append(nav_buttons)
+    keyboard_rows.append(home_button)
+    
+    await message.reply_text(
+        f"📄 Страница {page + 1} от {total_pages} (общо {total} обяви)",
+        reply_markup=InlineKeyboardMarkup(keyboard_rows)
+    )
+
+
+async def my_listings_page_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Обработчик переключения страниц своих объявлений."""
+    query = update.callback_query
+    await query.answer()
+    
+    page = int(query.data.replace("my_page_", ""))
+    
+    try:
+        await query.message.delete()
+    except Exception as e:
+        logger.warning(f"Could not delete my listings pagination message: {e}")
+    
+    await show_my_listings_page(query.message, ctx, page=page)
+    
     return MAIN_MENU
 
 
@@ -2624,13 +2715,40 @@ async def show_favorites(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(text, reply_markup=home_ikb())
         return MAIN_MENU
 
+    # Сохраняем для пагинации
+    ctx.user_data["favorites_listings"] = favorites
+
     header = f"⭐ *Любими* ({len(favorites)} обяви)"
     if query:
         await query.edit_message_text(header, parse_mode="Markdown")
     else:
         await update.message.reply_text(header, parse_mode="Markdown")
 
-    for row in favorites:
+    # Показываем первую страницу
+    msg_target = query.message if query else update.message
+    await show_favorites_page(msg_target, ctx, page=0)
+
+    return MAIN_MENU
+
+
+async def show_favorites_page(message, ctx, page=0):
+    """Показывает страницу избранного (5 объявлений)."""
+    ITEMS_PER_PAGE = 5
+    
+    favorites = ctx.user_data.get("favorites_listings", [])
+    total = len(favorites)
+    total_pages = math.ceil(total / ITEMS_PER_PAGE) if total > 0 else 1
+    
+    if page < 0:
+        page = 0
+    if page >= total_pages:
+        page = total_pages - 1
+    
+    start = page * ITEMS_PER_PAGE
+    end = start + ITEMS_PER_PAGE
+    page_listings = favorites[start:end]
+    
+    for row in page_listings:
         lid = row[0]
         caption = listing_text(row)
         buttons = [
@@ -2638,13 +2756,45 @@ async def show_favorites(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{lid}")],
         ]
         keyboard = InlineKeyboardMarkup(buttons)
-        msg_target = query.message if query else update.message
         try:
-            await send_listing(msg_target, caption, row, keyboard)
+            await send_listing(message, caption, row, keyboard)
+            await asyncio.sleep(0.05)
         except Exception as e:
             logger.error(f"Error showing favorite {lid}: {e}")
-            await msg_target.reply_text(caption, reply_markup=keyboard)
+            await message.reply_text(caption, reply_markup=keyboard, parse_mode="Markdown")
+    
+    # Навигация
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("◀️ Назад", callback_data=f"fav_page_{page-1}"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"fav_page_{page+1}"))
+    
+    keyboard_rows = []
+    if nav_buttons:
+        keyboard_rows.append(nav_buttons)
+    keyboard_rows.append([InlineKeyboardButton("🏠 Начало", callback_data="go_home")])
+    
+    await message.reply_text(
+        f"📄 Страница {page + 1} от {total_pages} (общо {total} обяви)",
+        reply_markup=InlineKeyboardMarkup(keyboard_rows)
+    )
 
+
+async def favorites_page_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Обработчик переключения страниц избранного."""
+    query = update.callback_query
+    await query.answer()
+    
+    page = int(query.data.replace("fav_page_", ""))
+    
+    try:
+        await query.message.delete()
+    except Exception as e:
+        logger.warning(f"Could not delete favorites pagination message: {e}")
+    
+    await show_favorites_page(query.message, ctx, page=page)
+    
     return MAIN_MENU
 
 
@@ -2739,6 +2889,8 @@ def main():
             MAIN_MENU: [
                 CallbackQueryHandler(go_home,              pattern="^go_home$"),
                 CallbackQueryHandler(search_page_handler,  pattern="^search_page_"),
+                CallbackQueryHandler(my_listings_page_handler, pattern="^my_page_"),
+                CallbackQueryHandler(favorites_page_handler, pattern="^fav_page_"),
                 CallbackQueryHandler(change_radius,        pattern="^change_radius$"),
                 CallbackQueryHandler(subscribe_to_notifications, pattern="^subscribe$"),
                 CallbackQueryHandler(toggle_favorite,      pattern="^(fav|unfav)_"),
