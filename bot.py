@@ -32,7 +32,7 @@ DB_FILE = os.path.join(DATA_DIR, "parking.db")
 PERSISTENCE_FILE = os.path.join(DATA_DIR, "bot_persistence.pkl")
 
 PAGE_SIZE  = 10
-MAX_LISTINGS_PER_USER = 10
+MAX_LISTINGS_PER_USER = 15  # Лимит объявлений для обычных пользователей (админ - безлимит)
 PHONE_RE   = re.compile(r'^\+?[0-9]{7,15}$')
 
 logging.basicConfig(
@@ -541,26 +541,30 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return SEARCH_TYPE
     else:
-        # Проверяем лимит объявлений
-        MAX_LISTINGS = 10
-        conn = db()
-        count = conn.execute(
-            "SELECT COUNT(*) FROM listings WHERE owner_id=? AND active=1", 
-            (query.from_user.id,)
-        ).fetchone()[0]
-        conn.close()
+        # Проверяем лимит объявлений (админ - безлимит)
+        user_id = query.from_user.id
         
-        if count >= MAX_LISTINGS:
-            await query.edit_message_text(
-                f"⚠️ Достигнали сте лимита от *{MAX_LISTINGS} активни обяви*.\n\n"
-                f"Изтрийте стари обяви за да добавите нови.",
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📁 Моите обяви", callback_data="start_mylistings")],
-                    [InlineKeyboardButton("🏠 Начало",      callback_data="go_home")],
-                ])
-            )
-            return MAIN_MENU
+        # Админ может создавать сколько угодно
+        if user_id != ADMIN_ID:
+            MAX_LISTINGS = 15
+            conn = db()
+            count = conn.execute(
+                "SELECT COUNT(*) FROM listings WHERE owner_id=? AND active=1", 
+                (user_id,)
+            ).fetchone()[0]
+            conn.close()
+            
+            if count >= MAX_LISTINGS:
+                await query.edit_message_text(
+                    f"⚠️ Достигнали сте лимита от *{MAX_LISTINGS} активни обяви*.\n\n"
+                    f"Изтрийте стари обяви за да добавите нови.",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📁 Моите обяви", callback_data="start_mylistings")],
+                        [InlineKeyboardButton("🏠 Начало",      callback_data="go_home")],
+                    ])
+                )
+                return MAIN_MENU
 
         ctx.user_data["ad"] = {"action": action}
         ctx.user_data["published"] = False
