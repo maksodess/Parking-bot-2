@@ -55,6 +55,7 @@ logger = logging.getLogger(__name__)
 # ── БД ────────────────────────────────────────────────────────
 def db():
     conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row  # Доступ по именам: row["price"]
     conn.execute("PRAGMA journal_mode=WAL")  # Лучшая конкурентность
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -101,6 +102,18 @@ def init_db():
             UNIQUE(user_id, listing_id)
         );
     """)
+    
+    # 🔴 ИНДЕКСЫ для производительности (критично при 1000+ объявлений)
+    conn.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_listings_owner ON listings(owner_id);
+        CREATE INDEX IF NOT EXISTS idx_listings_active_action ON listings(active, action);
+        CREATE INDEX IF NOT EXISTS idx_listings_coords ON listings(lat, lon);
+        CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
+        CREATE INDEX IF NOT EXISTS idx_favorites_listing ON favorites(listing_id);
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON search_subscriptions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_subscriptions_active ON search_subscriptions(active);
+    """)
+    
     # Миграция для существующих БД
     migrations = [
         "ALTER TABLE listings ADD COLUMN views INTEGER DEFAULT 0",
@@ -1613,9 +1626,36 @@ async def handle_successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TY
 
 
 async def handle_precheckout_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Подтверждение предоплаты."""
+    """Подтверждение предоплаты с валидацией."""
     query = update.pre_checkout_query
-    await query.answer(ok=True)
+    
+    # 🔴 ВАЛИДАЦИЯ платежа (защита от подделки)
+    try:
+        # Проверяем что цена корректна (100 Stars = подписка)
+        if query.total_amount != 100:
+            await query.answer(
+                ok=False, 
+                error_message="❌ Невалидна сума за плащане. Опитайте отново."
+            )
+            return
+        
+        # Проверяем что currency правильный
+        if query.currency != "XTR":  # Telegram Stars
+            await query.answer(
+                ok=False,
+                error_message="❌ Невалидна валута. Използвайте Telegram Stars."
+            )
+            return
+        
+        # Всё ОК - подтверждаем
+        await query.answer(ok=True)
+        
+    except Exception as e:
+        logger.error(f"Precheckout validation error: {e}", exc_info=True)
+        await query.answer(
+            ok=False,
+            error_message="❌ Грешка при обработка на плащането. Опитайте отново."
+        )
 
 async def contact_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
