@@ -678,6 +678,33 @@ async def ad_address_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def ad_location_geo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
     loc = update.message.location
+    
+    # 🔴 ПРОВЕРКА: объявление должно быть в пределах 50км от центра Варны
+    VARNA_CENTER_LAT = 43.2141
+    VARNA_CENTER_LON = 27.9147
+    MAX_DISTANCE_FROM_VARNA = 50000  # 50 км в метрах
+    
+    distance_from_varna = haversine(VARNA_CENTER_LAT, VARNA_CENTER_LON, loc.latitude, loc.longitude)
+    
+    if distance_from_varna > MAX_DISTANCE_FROM_VARNA:
+        await update.message.reply_text(
+            f"❌ *Обявата е твърде далеч от Варна!*\n\n"
+            f"Разстояние от центъра на Варна: {distance_from_varna/1000:.1f} км\n"
+            f"Максимално разрешено: {MAX_DISTANCE_FROM_VARNA/1000:.0f} км\n\n"
+            f"💡 Този бот е само за обяви във Варна и околностите.\n"
+            f"Моля, изберете локация във Варна.",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        # Возвращаем в состояние выбора способа указания локации
+        await update.message.reply_text(
+            "📍 *Местоположение на обекта*\n\n"
+            "Как искате да посочите локацията?",
+            parse_mode="Markdown",
+            reply_markup=location_choice_keyboard("ad")
+        )
+        return AD_LOCATION_CHOICE
+    
     ctx.user_data["ad"]["lat"] = loc.latitude
     ctx.user_data["ad"]["lon"] = loc.longitude
 
@@ -1271,8 +1298,23 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     results = []
     no_geo  = []
+    
+    # 🔴 КОНСТАНТЫ для фильтрации по городу Варна
+    VARNA_CENTER_LAT = 43.2141
+    VARNA_CENTER_LON = 27.9147
+    MAX_DISTANCE_FROM_VARNA = 50000  # 50 км в метрах
+    
     for row in rows:
         lat, lon = row[7], row[8]
+        
+        # Проверяем что объявление в пределах Варны (50км от центра)
+        if lat is not None and lon is not None:
+            dist_from_varna = haversine(VARNA_CENTER_LAT, VARNA_CENTER_LON, lat, lon)
+            
+            # Пропускаем объявления слишком далеко от Варны
+            if dist_from_varna > MAX_DISTANCE_FROM_VARNA:
+                continue
+        
         if user_lat and lat is not None:
             dist = haversine(user_lat, user_lon, lat, lon)
             if radius is None or dist <= radius:
@@ -1311,7 +1353,12 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     rl = (f"{radius//1000} км" if radius >= 1000 else f"{radius} м") if radius else "вся Варна"
 
     logger.info(f"Search results: {len(results)} with geo, {len(no_geo)} without geo")
-
+    
+    # Сохраняем результаты поиска для пагинации
+    ctx.user_data["search_results"] = results
+    ctx.user_data["search_no_geo"] = no_geo
+    ctx.user_data["search_radius_label"] = rl
+    
     from telegram import ReplyKeyboardRemove
     await query.edit_message_text(
         f"🔍 Намерени *{total}* обяви · радиус: {rl}",
@@ -1319,15 +1366,44 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
     # Убираем кнопку геолокации БЕЗ лишнего сообщения
-    # (отправляем невидимый символ чтобы просто убрать клавиатуру)
     try:
         await query.message.reply_text("​", reply_markup=ReplyKeyboardRemove())
     except Exception as e:
         logger.error(f"ReplyKeyboardRemove error: {e}")
+    
+    # Показываем первую страницу (первые 5 объявлений)
+    await show_search_page(query.message, ctx, page=0)
+    
+    return MAIN_MENU
 
-    for dist, row in results:
+
+async def show_search_page(message, ctx, page=0):
+    """Показывает страницу результатов поиска (5 объявлений)."""
+    ITEMS_PER_PAGE = 5
+    
+    results = ctx.user_data.get("search_results", [])
+    no_geo = ctx.user_data.get("search_no_geo", [])
+    all_listings = results + [(None, row) for row in no_geo]
+    
+    total = len(all_listings)
+    total_pages = math.ceil(total / ITEMS_PER_PAGE) if total > 0 else 1
+    
+    # Ограничиваем страницу
+    if page < 0:
+        page = 0
+    if page >= total_pages:
+        page = total_pages - 1
+    
+    start = page * ITEMS_PER_PAGE
+    end = start + ITEMS_PER_PAGE
+    page_listings = all_listings[start:end]
+    
+    viewer_id = message.chat.id
+    
+    # Отправляем объявления на текущей странице
+    for item in page_listings:
+        dist, row = item if item[0] is not None else (None, item[1])
         lid = row[0]
-        viewer_id = query.from_user.id
         caption = listing_text(row, distance_m=dist)
         logger.info(f"Sending listing {lid} to user {viewer_id}")
 
@@ -1338,54 +1414,73 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ).fetchone()
         conn.close()
 
-        fav_text   = "💔 Премахни от любими" if in_fav else "⭐ В любими"
+        fav_text = "💔 Премахни от любими" if in_fav else "⭐ В любими"
         fav_action = f"unfav_{lid}" if in_fav else f"fav_{lid}"
-        keyboard   = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{lid}"),
-             InlineKeyboardButton(fav_text, callback_data=fav_action)],
-        ])
+        
+        if dist is not None:
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{lid}"),
+                 InlineKeyboardButton(fav_text, callback_data=fav_action)],
+            ])
+        else:
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(fav_text, callback_data=fav_action)]])
 
         try:
-            await send_listing(query.message, caption, row, keyboard)
+            await send_listing(message, caption, row, keyboard)
+            await asyncio.sleep(0.05)  # Rate limiting
             logger.info(f"Listing {lid} sent successfully")
         except Exception as e:
             logger.error(f"Error listing {lid}: {e}", exc_info=True)
             try:
-                await query.message.reply_text(caption, reply_markup=keyboard)
+                await message.reply_text(caption, reply_markup=keyboard, parse_mode="Markdown")
             except Exception as e2:
                 logger.error(f"Error listing {lid} no md: {e2}")
-
-    for row in no_geo:
-        lid = row[0]
-        viewer_id = query.from_user.id
-        caption = listing_text(row)
-
-        conn = db()
-        in_favorites = conn.execute(
-            "SELECT 1 FROM favorites WHERE user_id=? AND listing_id=?",
-            (viewer_id, lid)
-        ).fetchone()
-        conn.close()
-
-        fav_text   = "💔 Премахни от любими" if in_favorites else "⭐ В любими"
-        fav_action = f"unfav_{lid}" if in_favorites else f"fav_{lid}"
-        keyboard   = InlineKeyboardMarkup([[InlineKeyboardButton(fav_text, callback_data=fav_action)]])
-
-        try:
-            await send_listing(query.message, caption, row, keyboard)
-        except Exception as e:
-            logger.error(f"Error no_geo listing {lid}: {e}")
-            try:
-                await query.message.reply_text(caption, reply_markup=keyboard)
-            except Exception as e2:
-                logger.error(f"Error no_geo listing {lid} no md: {e2}")
-
-    # Финальное сообщение убирает ReplyKeyboard и показывает Начало
-    await query.message.reply_text(
-        "✅ Всички резултати са показани.",
-        reply_markup=home_ikb()
+    
+    # Кнопки навигации
+    nav_buttons = []
+    
+    # Кнопка "Назад" если не первая страница
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("◀️ Назад", callback_data=f"search_page_{page-1}"))
+    
+    # Кнопка "Вперед" если не последняя страница
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"search_page_{page+1}"))
+    
+    # Кнопка "На главную" всегда
+    home_button = [InlineKeyboardButton("🏠 Начало", callback_data="go_home")]
+    
+    # Формируем клавиатуру
+    keyboard_rows = []
+    if nav_buttons:
+        keyboard_rows.append(nav_buttons)
+    keyboard_rows.append(home_button)
+    
+    # Отправляем сообщение с навигацией
+    await message.reply_text(
+        f"📄 Страница {page + 1} от {total_pages} (общо {total} обяви)",
+        reply_markup=InlineKeyboardMarkup(keyboard_rows)
     )
+
+
+async def search_page_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Обработчик переключения страниц поиска."""
+    query = update.callback_query
+    await query.answer()
+    
+    page = int(query.data.replace("search_page_", ""))
+    
+    # Удаляем старое сообщение с навигацией
+    try:
+        await query.message.delete()
+    except Exception as e:
+        logger.warning(f"Could not delete pagination message: {e}")
+    
+    # Показываем новую страницу
+    await show_search_page(query.message, ctx, page=page)
+    
     return MAIN_MENU
+
 
 async def change_radius(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2643,6 +2738,7 @@ def main():
         states={
             MAIN_MENU: [
                 CallbackQueryHandler(go_home,              pattern="^go_home$"),
+                CallbackQueryHandler(search_page_handler,  pattern="^search_page_"),
                 CallbackQueryHandler(change_radius,        pattern="^change_radius$"),
                 CallbackQueryHandler(subscribe_to_notifications, pattern="^subscribe$"),
                 CallbackQueryHandler(toggle_favorite,      pattern="^(fav|unfav)_"),
@@ -2722,6 +2818,7 @@ def main():
             ],
             SEARCH_RADIUS: [
                 CallbackQueryHandler(search_radius_chosen,        pattern="^radius_"),
+                CallbackQueryHandler(search_page_handler,         pattern="^search_page_"),
                 CallbackQueryHandler(subscribe_to_notifications,  pattern="^subscribe$"),
                 CallbackQueryHandler(toggle_favorite,             pattern="^(fav|unfav)_"),
                 CallbackQueryHandler(show_map,                    pattern="^map_"),
