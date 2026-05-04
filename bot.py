@@ -2719,6 +2719,18 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(handle_precheckout_query))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, handle_successful_payment))
     
+    # Глобальный handler для кнопки "🏠 Начало" - работает даже если ConversationHandler потерял состояние
+    async def global_home_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Сбрасывает состояние и возвращает в главное меню."""
+        ctx.user_data.clear()
+        await update.message.reply_text(
+            "🚗 *ParkPlace Varna*\nКакво искате да направите?",
+            parse_mode="Markdown", 
+            reply_markup=action_keyboard()
+        )
+    
+    app.add_handler(MessageHandler(filters.Regex("^🏠 Начало$"), global_home_button))
+    
     # Устанавливаем команды для меню бота
     async def post_init(application):
         from telegram import BotCommand, BotCommandScopeDefault
