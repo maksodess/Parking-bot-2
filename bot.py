@@ -2720,11 +2720,22 @@ def main():
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, handle_successful_payment))
     
     # Глобальные handlers для команд - работают даже если ConversationHandler потерял состояние
-    # Это нужно после редеплоя когда Persistence теряет состояние
     app.add_handler(CommandHandler("my", cmd_my))
     app.add_handler(CommandHandler("favorites", cmd_favorites))
     app.add_handler(CommandHandler("subscriptions", cmd_subscriptions))
     app.add_handler(CommandHandler("help", cmd_help))
+    
+    # Глобальные callback handlers для кнопок главного меню - работают после редеплоя
+    async def global_callback_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Перехватывает кнопки главного меню если ConversationHandler потерял состояние."""
+        query = update.callback_query
+        await query.answer()
+        
+        # Перенаправляем на start_action который обработает callback
+        return await start_action(update, ctx)
+    
+    # Регистрируем для всех кнопок главного меню
+    app.add_handler(CallbackQueryHandler(global_callback_router, pattern="^start_(buy|sell|rent|lease|mylistings|favorites|subscriptions)$"))
     
     # Глобальный handler для кнопки "🏠 Начало" - работает даже если ConversationHandler потерял состояние
     async def global_home_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
