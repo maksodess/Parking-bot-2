@@ -2719,6 +2719,13 @@ def main():
     app.add_handler(PreCheckoutQueryHandler(handle_precheckout_query))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, handle_successful_payment))
     
+    # Глобальные handlers для команд - работают даже если ConversationHandler потерял состояние
+    # Это нужно после редеплоя когда Persistence теряет состояние
+    app.add_handler(CommandHandler("my", cmd_my))
+    app.add_handler(CommandHandler("favorites", cmd_favorites))
+    app.add_handler(CommandHandler("subscriptions", cmd_subscriptions))
+    app.add_handler(CommandHandler("help", cmd_help))
+    
     # Глобальный handler для кнопки "🏠 Начало" - работает даже если ConversationHandler потерял состояние
     async def global_home_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Сбрасывает состояние и возвращает в главное меню."""
