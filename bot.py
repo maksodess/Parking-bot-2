@@ -24,6 +24,7 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
+from messages import t, get_user_lang, set_user_lang, detect_telegram_lang
 ADMIN_ID   = 5053888378
 
 # ── Paths configuration (Railway Volumes) ─────────────────
@@ -101,6 +102,11 @@ def init_db():
             listing_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')),
             UNIQUE(user_id, listing_id)
         );
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            language TEXT DEFAULT 'bg',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
     """)
     
     # 🔴 ИНДЕКСЫ для производительности (критично при 1000+ объявлений)
@@ -136,7 +142,7 @@ async def geocode(address: str):
     if address in _geocode_cache:
         return _geocode_cache[address]
 
-    query = f"{address}, Варна, България"
+    query = f"{address}, Варна, Болгария"
     url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode({
         "q": query, "format": "json", "limit": 1, "countrycodes": "bg",
     })
@@ -197,17 +203,11 @@ def fmt_dist(m):
     else: return f"{m/1000:.0f} км от вас"
 
 # ── Лейблы ────────────────────────────────────────────────────
-ACTION_LABEL = {
-    "buy":   "🛒 Купува",
-    "sell":  "💰 Продава",
-    "rent":  "🔑 Наем",
-    "lease": "📋 Под наем",
-}
-TYPE_LABEL = {
-    "parking": "🅿️ Паркомясто",
-    "garage":  "🚘 Гараж",
-    "all":     "📋 Всичко",
-}
+def get_action_label(action: str, lang: str = 'bg') -> str:
+    return t(f"action_{action}", lang) if action in ['buy', 'sell', 'rent', 'lease'] else action
+
+def get_type_label(ltype: str, lang: str = 'bg') -> str:
+    return t(f"type_{ltype}", lang) if ltype in ['parking', 'garage', 'all'] else ltype
 
 
 def has_purchased_contacts(buyer_id: int, listing_id: int) -> bool:
@@ -220,10 +220,10 @@ def has_purchased_contacts(buyer_id: int, listing_id: int) -> bool:
     conn.close()
     return result is not None
 
-def listing_text(row, distance_m=None):
+def listing_text(row, distance_m=None, lang='bg'):
     """Формирует текст обявиения (все контакты видны всем)."""
     lid, owner_id, owner_name, action, ltype, address, phone, lat, lon, price, desc, photo, active, created, confirmed_at, views = row
-    lines = [f"{ACTION_LABEL.get(action, action)} · {TYPE_LABEL.get(ltype, ltype)}"]
+    lines = [f"{get_action_label(action, lang)} · {get_type_label(ltype, lang)}"]
     
     if distance_m is not None:
         lines.append(f"📏 *{fmt_dist(distance_m)}*")
@@ -279,163 +279,168 @@ def main_keyboard():
     from telegram import ReplyKeyboardRemove
     return ReplyKeyboardRemove()
 
-def home_ikb():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Начало", callback_data="go_home")]])
+def home_ikb(lang='bg'):
+    return InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]])
 
 def back_and_home_ikb(back_action="go_home"):
     """Кнопки Назад + На главную."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Назад", callback_data=back_action)],
-        [InlineKeyboardButton("🏠 Начало", callback_data="go_home")],
+        [InlineKeyboardButton(t("btn_back", lang), callback_data=back_action)],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
     ])
 
-def action_keyboard():
+def action_keyboard(lang='bg'):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🛒 Купува",         callback_data="start_buy"),
-         InlineKeyboardButton("💰 Продава",        callback_data="start_sell")],
-        [InlineKeyboardButton("🔑 Наем",           callback_data="start_rent"),
-         InlineKeyboardButton("📋 Под наем",       callback_data="start_lease")],
-        [InlineKeyboardButton("📁 Моите обяви", callback_data="start_mylistings"),
-         InlineKeyboardButton("⭐ Любими",       callback_data="start_favorites")],
-        [InlineKeyboardButton("🔔 Абонаменти",   callback_data="start_subscriptions")],
+        [InlineKeyboardButton(t("btn_buy", lang), callback_data="start_buy"), InlineKeyboardButton(t("btn_sell", lang), callback_data="start_sell")],
+        [InlineKeyboardButton(t("btn_rent", lang), callback_data="start_rent"), InlineKeyboardButton(t("btn_lease", lang), callback_data="start_lease")],
+        [InlineKeyboardButton(t("btn_my_listings", lang), callback_data="start_mylistings"), InlineKeyboardButton(t("btn_favorites", lang), callback_data="start_favorites")],
+        [InlineKeyboardButton(t("btn_subscriptions", lang), callback_data="start_subscriptions")],
+        [InlineKeyboardButton(t("btn_language", lang), callback_data="start_language")],
     ])
 
-def type_keyboard(prefix, include_all=False):
+def OLD_action_keyboard(lang='bg'):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🛒 Купить",         callback_data="start_buy"),
+         InlineKeyboardButton("💰 Продать",        callback_data="start_sell")],
+        [InlineKeyboardButton("🔑 Аренда",           callback_data="start_rent"),
+         InlineKeyboardButton("📋 Сдать",       callback_data="start_lease")],
+        [InlineKeyboardButton("📁 Мои объявления", callback_data="start_mylistings"),
+         InlineKeyboardButton("⭐ Избранное",       callback_data="start_favorites")],
+        [InlineKeyboardButton("🔔 Подписки",   callback_data="start_subscriptions")],
+    ])
+
+def type_keyboard(prefix, include_all=False, lang='bg'):
     rows = [
-        [InlineKeyboardButton("🅿️ Паркомясто", callback_data=f"{prefix}_parking")],
+        [InlineKeyboardButton("🅿️ Парковочное место", callback_data=f"{prefix}_parking")],
         [InlineKeyboardButton("🚘 Гараж",       callback_data=f"{prefix}_garage")],
     ]
     if include_all:
-        rows.append([InlineKeyboardButton("📋 Всичко наведнъж", callback_data=f"{prefix}_all")])
-    rows.append([InlineKeyboardButton("🏠 Начало", callback_data="go_home")])
+        rows.append([InlineKeyboardButton(t("btn_all", lang), callback_data=f"{prefix}_all")])
+    rows.append([InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")])
     return InlineKeyboardMarkup(rows)
 
-def location_choice_keyboard(prefix):
+def location_choice_keyboard(prefix, lang='bg'):
     """Выбор способа указания местоположения."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✏️ Въвеждане на адрес",       callback_data=f"{prefix}_text")],
-        [InlineKeyboardButton("📍 Изпращане на геолокация", callback_data=f"{prefix}_geo")],
+        [InlineKeyboardButton(t("btn_enter_address", lang),       callback_data=f"{prefix}_text")],
+        [InlineKeyboardButton(t("btn_send_location", lang), callback_data=f"{prefix}_geo")],
         [InlineKeyboardButton("🏠 Начало",           callback_data="go_home")],
     ])
 
 def geo_ad_keyboard():
     return ReplyKeyboardMarkup([
-        [KeyboardButton("📍 Изпращане на геолокация на обекта", request_location=True)],
+        [KeyboardButton(t("btn_send_location_object", lang), request_location=True)],
     ], resize_keyboard=True, one_time_keyboard=True)
 
 def geo_search_keyboard():
     return ReplyKeyboardMarkup([
-        [KeyboardButton("📍 Изпращане на моята геолокация", request_location=True)],
+        [KeyboardButton(t("btn_send_my_location", lang), request_location=True)],
     ], resize_keyboard=True, one_time_keyboard=True)
 
 def phone_keyboard():
     """Клавиатура с бутон за автоматично изпращане на вашия номер."""
     return ReplyKeyboardMarkup([
-        [KeyboardButton("📱 Изпращане на моя номер", request_contact=True)],
-        [KeyboardButton("⏩ Пропускане")],
+        [KeyboardButton(t("btn_send_phone", lang), request_contact=True)],
+        [KeyboardButton(t("btn_skip", lang))],
     ], resize_keyboard=True, one_time_keyboard=True)
 
-def radius_keyboard():
+def radius_keyboard(lang='bg'):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("500 м", callback_data="radius_500"),
          InlineKeyboardButton("1 км",  callback_data="radius_1000")],
         [InlineKeyboardButton("2 км",  callback_data="radius_2000"),
          InlineKeyboardButton("5 км",  callback_data="radius_5000")],
-        [InlineKeyboardButton("📋 Цяла Варна", callback_data="radius_all")],
-        [InlineKeyboardButton("🏠 Начало", callback_data="go_home")],
+        [InlineKeyboardButton(t("search_radius_all", lang), callback_data="radius_all")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
     ])
 
 def admin_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 Обяви",   callback_data="adm_listings_0"),
-         InlineKeyboardButton("👥 Потребители", callback_data="adm_users")],
+        [InlineKeyboardButton("📋 Объявления",   callback_data="adm_listings_0"),
+         InlineKeyboardButton("👥 Пользователи", callback_data="adm_users")],
         [InlineKeyboardButton("📊 Статистика",   callback_data="adm_stats"),
-         InlineKeyboardButton("📢 Изпращане",     callback_data="adm_broadcast")],
+         InlineKeyboardButton("📢 Рассылка",     callback_data="adm_broadcast")],
         [InlineKeyboardButton("🏠 Начало",   callback_data="go_home")],
     ])
 
 # ── /start ────────────────────────────────────────────────────
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
-    ctx.user_data.clear()
+    user_id = update.effective_user.id
+    
+    lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
+    if not lang or lang == 'bg':
+        detected_lang = detect_telegram_lang(update)
+        if detected_lang != lang:
+            set_user_lang(user_id, detected_lang, ctx)
+            lang = detected_lang
+            ctx.user_data["lang"] = lang
     
     if update.message:
-        await update.message.reply_text(
-            "🚗 *Добре дошли в ParkPlace Varna!*\n\n"
-            "Пазар за паркоместа и гаражи във Варна.\n\n"
-            "Изберете действие от менюто:",
-            parse_mode="Markdown", 
-            reply_markup=action_keyboard()
-        )
+        await update.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
     else:
-        await update.callback_query.message.reply_text(
-            "🚗 *Добре дошли в ParkPlace Varna!*\n\n"
-            "Пазар за паркоместа и гаражи във Варна.\n\n"
-            "Изберете действие от менюто:",
-            parse_mode="Markdown",
-            reply_markup=action_keyboard()
-        )
+        await update.callback_query.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
     return MAIN_MENU
 
 async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = update.effective_user.id
+    
+    # Сохраняем язык перед очисткой
+    saved_lang = ctx.user_data.get("lang")
     ctx.user_data.clear()
+    if saved_lang:
+        ctx.user_data["lang"] = saved_lang
     
-    # Редактируем существующее сообщение
+    # Получаем язык
+    lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
+    
     try:
-        await query.edit_message_text(
-            "🚗 *ParkPlace Varna*\n\nКакво искате да направите?",
-            parse_mode="Markdown",
-            reply_markup=action_keyboard()
-        )
+        await query.edit_message_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
     except Exception:
-        # Если не можем отредактировать (например, медиагруппа), отправляем новое
-        await query.message.reply_text(
-            "🚗 *ParkPlace Varna*\n\nКакво искате да направите?",
-            parse_mode="Markdown",
-            reply_markup=action_keyboard()
-        )
-    
+        await query.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
     return MAIN_MENU
 
 # ── Текстовое меню ────────────────────────────────────────────
 async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    from telegram import ReplyKeyboardRemove
+    user_id = update.effective_user.id
     text = update.message.text
-    if text == "🏠 Начало":
-        ctx.user_data.clear()
-        await update.message.reply_text(
-            "🚗 *ParkPlace Varna*\nКакво искате да направите?",
-            parse_mode="Markdown", 
-            reply_markup=action_keyboard()
-        )
+    
+    if text in ["🏠 Начало", "🏠 Главная"]:
+        lang = get_user_lang(user_id, ctx)
+        ctx.user_data["lang"] = lang
+        await update.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
         return MAIN_MENU
-    elif text == "📁 Моите обяви":
-        return await show_my_listings(update, ctx)
-    elif text == "ℹ️ Помощ":
-        await update.message.reply_text(
-            "*Как да използвате:*\n\n"
-            "🛒 *Купува / Наем* — намиране на обект\n"
-            "💰 *Продава / Под наем* — публикуване на обява\n\n"
-            "📍 *Местоположение на обекта:*\n"
-            "Можете да въведете адрес като текст — ботът ще го намери на картата.\n"
-            "Или изпратете геолокация чрез 📎 → Геолокация.\n\n"
-            "🔍 *Търсене по радиус* — посочете вашето местоположение\n"
-            "и изберете радиус: 500м / 1км / 2км / 5км / Цяла Варна.",
-            parse_mode="Markdown", reply_markup=main_keyboard()
-        )
-        return MAIN_MENU
-    await update.message.reply_text("Какво искате да направите?", reply_markup=action_keyboard())
+    
+    lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
+    await update.message.reply_text(t("choose_action", lang), reply_markup=action_keyboard(lang))
     return MAIN_MENU
-
-# ── Выбор действия ────────────────────────────────────────────
 
 async def home_button_pressed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Обработка Reply-кнопки 'На главную' из любого состояния."""
+    saved_lang = ctx.user_data.get("lang")
     ctx.user_data.clear()
+    if saved_lang:
+        ctx.user_data["lang"] = saved_lang
+    
+    lang = get_user_lang(update.effective_user.id, ctx)
+    ctx.user_data["lang"] = lang
+    
     await update.message.reply_text(
-        "🚗 *ParkPlace Varna*\nКакво искате да направите?",
+        t("welcome", lang),
+        parse_mode="Markdown", 
+        reply_markup=action_keyboard(lang)
+    )
+    return MAIN_MENU
+
+async def OLD_home_button_pressed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """СТАРАЯ ВЕРСИЯ - НЕ ИСПОЛЬЗУЕТСЯ"""
+    await update.message.reply_text(
+        "🚗 *ParkPlace Varna*\nЧто вы хотите сделать?",
         parse_mode="Markdown", reply_markup=action_keyboard()
     )
     return MAIN_MENU
@@ -444,8 +449,24 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     action = query.data.replace("start_", "")
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
 
-    # Любими
+    if action == "language":
+        return await cmd_language(update, ctx)
+    
+    if action in ["buy", "sell", "rent", "lease"]:
+        ctx.user_data["action"] = action
+        if action in ["sell", "lease"]:
+            ctx.user_data["ad"] = {"action": action}
+            await query.edit_message_text(t("ad_type_question", lang, action=get_action_label(action, lang)), parse_mode="Markdown", reply_markup=type_keyboard("adtype", lang=lang))
+            return AD_TYPE
+        else:
+            ctx.user_data["search_action"] = action
+            await query.edit_message_text(t("search_type_question", lang), parse_mode="Markdown", reply_markup=type_keyboard("stype", include_all=True, lang=lang))
+            return SEARCH_TYPE
+
     if action == "favorites":
         return await show_favorites(update, ctx)
 
@@ -457,13 +478,13 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not rows:
-            await query.edit_message_text("Все още нямате обяви.", reply_markup=home_ikb())
+            await query.edit_message_text(t("my_listings_empty", lang), reply_markup=home_ikb(lang=lang))
             return MAIN_MENU
         
         # Сохраняем для пагинации
         ctx.user_data["my_listings"] = rows
         
-        await query.edit_message_text(f"📁 *Вашите обяви* ({len(rows)})", parse_mode="Markdown", reply_markup=home_ikb())
+        await query.edit_message_text(t("my_listings_title", lang, count=len(rows)), parse_mode="Markdown", reply_markup=home_ikb(lang=lang))
         
         # Показываем первую страницу
         await show_my_listings_page(query.message, ctx, page=0)
@@ -483,13 +504,12 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         if not rows:
             await query.edit_message_text(
-                "🔔 Нямате активни абонаменти.\n\n"
-                "Абонаментите позволяват получаване на известия о новых обявиениях.",
-                reply_markup=home_ikb()
+                t("subscriptions_empty", lang),
+                reply_markup=home_ikb(lang=lang)
             )
             return MAIN_MENU
         
-        await query.edit_message_text(f"🔔 Вашите абонаменти ({len(rows)}):", reply_markup=home_ikb())
+        await query.edit_message_text(t("subscriptions_title", lang, count=len(rows)), reply_markup=home_ikb(lang=lang))
         
         for sub_id, stype, act, lat, lon, radius, created, expires, active in rows:
             import datetime
@@ -517,10 +537,10 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
             btns = []
             if active:
-                btns.append(InlineKeyboardButton("⏸ Изключване", callback_data=f"unsub_{sub_id}"))
+                btns.append(InlineKeyboardButton(t("btn_pause", lang), callback_data=f"unsub_{sub_id}"))
             else:
-                btns.append(InlineKeyboardButton("▶️ Включване", callback_data=f"resub_{sub_id}"))
-            btns.append(InlineKeyboardButton("🗑 Изтрий", callback_data=f"delsub_{sub_id}"))
+                btns.append(InlineKeyboardButton(t("btn_resume", lang), callback_data=f"resub_{sub_id}"))
+            btns.append(InlineKeyboardButton(t("btn_delete", lang), callback_data=f"delsub_{sub_id}"))
             
             await query.message.reply_text(
                 text,
@@ -537,7 +557,7 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"*{ACTION_LABEL[action]}* — изберете тип:",
             parse_mode="Markdown",
-            reply_markup=type_keyboard("stype", include_all=True)
+            reply_markup=type_keyboard("stype", include_all=True, lang=lang)
         )
         return SEARCH_TYPE
     else:
@@ -556,11 +576,11 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
             if count >= MAX_LISTINGS:
                 await query.edit_message_text(
-                    f"⚠️ Достигнали сте лимита от *{MAX_LISTINGS} активни обяви*.\n\n"
-                    f"Изтрийте стари обяви за да добавите нови.",
+                    f"⚠️ Вы достигли лимита *{MAX_LISTINGS} активных объявлений*.\n\n"
+                    f"Удалите старые объявления за да добавите нови.",
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📁 Моите обяви", callback_data="start_mylistings")],
+                        [InlineKeyboardButton("📁 Мои объявления", callback_data="start_mylistings")],
                         [InlineKeyboardButton("🏠 Начало",      callback_data="go_home")],
                     ])
                 )
@@ -597,7 +617,7 @@ async def ad_location_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "✏️ Въведете *адрес на обекта*:\n\n"
             "Например: _ул. Цар Симеон I 15_ или _бул. Приморски 42_\n\n"
-            "Ботът ще намери това място на картата.",
+            "Бот найдёт это место на картата.",
             parse_mode="Markdown"
         )
         return AD_ADDRESS_TEXT
@@ -637,9 +657,9 @@ async def ad_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"📍 Намерих: _{display[:120]}_\n\nТова ли е правилното място?",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Да, правилно",          callback_data="addrconfirm_ok")],
-            [InlineKeyboardButton("❌ Не, въведи отново",  callback_data="addrconfirm_retry")],
-            [InlineKeyboardButton("📍 Уточни с геолокация", callback_data="addrconfirm_geo")],
+            [InlineKeyboardButton(t("btn_yes_correct", lang),          callback_data="addrconfirm_ok")],
+            [InlineKeyboardButton(t("btn_no_retry", lang),  callback_data="addrconfirm_retry")],
+            [InlineKeyboardButton(t("btn_clarify_geo", lang), callback_data="addrconfirm_geo")],
         ])
     )
     return AD_ADDRESS_CONFIRM
@@ -693,9 +713,9 @@ async def ad_location_geo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"❌ *Обявата е твърде далеч от Варна!*\n\n"
             f"Разстояние от центъра на Варна: {distance_from_varna/1000:.1f} км\n"
-            f"Максимално разрешено: {MAX_DISTANCE_FROM_VARNA/1000:.0f} км\n\n"
-            f"💡 Този бот е само за обяви във Варна и околностите.\n"
-            f"Моля, изберете локация във Варна.",
+            f"Максимално разрешено: {MAX_DISTANCE_FROM_VARNA/1000:.0f} км\n\n" +
+            t("msg_varna_only", lang) + "\n" +
+            t("msg_choose_varna_location", lang),
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -714,7 +734,7 @@ async def ad_location_geo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Если адрес ещё не задан — пробуем определить его по координатам
     if not ctx.user_data["ad"].get("address"):
         await update.message.reply_text(
-            "🔍 Определям адрес по геолокация...",
+            t("msg_determining_address", lang),
             reply_markup=ReplyKeyboardRemove()  # Убираем кнопку
         )
         addr = await reverse_geocode(loc.latitude, loc.longitude)
@@ -741,7 +761,7 @@ async def ad_phone(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["ad"]["phone"] = update.message.contact.phone_number
     else:
         text = update.message.text.strip()
-        if text == "⏩ Пропускане" or text == "-":
+        if text == t("btn_skip", lang) or text == "-":
             ctx.user_data["ad"]["phone"] = None
         else:
             # Валидация телефона
@@ -766,7 +786,7 @@ async def ad_phone(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     from telegram import ReplyKeyboardRemove
     await update.message.reply_text(
-        "💰 Въведете *цена* (число, €):",
+        "💰 Введите *цену* (число, €):",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove()
     )
@@ -777,7 +797,7 @@ async def ad_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         price = float(update.message.text.strip().replace(" ", "").replace(",", "."))
         ctx.user_data["ad"]["price"] = price
     except ValueError:
-        await update.message.reply_text("❌ Въведете число, например: 5000")
+        await update.message.reply_text("❌ Введите число, например: 5000")
         return AD_PRICE
     
     # Если редактируем — возвращаемся в превью
@@ -804,12 +824,12 @@ async def ad_description(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     ctx.user_data["ad"]["photos"] = []
     await update.message.reply_text(
-        "📸 Изпратете до 5 снимки *наведнъж* (незадължително)\n\n"
-        "Изберете всички снимки в галерията и изпратете с едно съобщение.\n"
+        "📸 Отправьте до 5 фотографий *наведнъж* (незадължително)\n\n"
+        "Выберите все фотографии в галерията и изпратете с едно съобщение.\n"
         "Или «-» за да пропуснете:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏩ Пропускане (без снимки)", callback_data="photos_done")],
+            [InlineKeyboardButton(t("btn_skip_no_photos", lang), callback_data="photos_done")],
         ])
     )
     return AD_PHOTO
@@ -852,8 +872,8 @@ async def ad_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"✅ Получени *{cnt}* снимки.\nНатиснете *Готово* за да продължите:",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"✅ Готово ({cnt} снимки)", callback_data="photos_done")],
-                    [InlineKeyboardButton("⏩ Пропускане", callback_data="photos_done")],
+                    [InlineKeyboardButton(f"✅ {t('btn_done', lang)} ({cnt})", callback_data="photos_done")],
+                    [InlineKeyboardButton(t("btn_skip", lang), callback_data="photos_done")],
                 ])
             )
 
@@ -870,7 +890,7 @@ async def ad_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "📸 Изпратете снимки или натиснете *Пропускане*:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏩ Пропускане", callback_data="photos_done")],
+            [InlineKeyboardButton(t("btn_skip", lang), callback_data="photos_done")],
         ])
     )
     return AD_PHOTO
@@ -897,13 +917,13 @@ async def _show_ad_preview(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     preview += photo_line
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Публикуване", callback_data="ad_publish")],
-        [InlineKeyboardButton("✏️ Адрес",    callback_data="ad_edit_address"),
-         InlineKeyboardButton("✏️ Телефон",  callback_data="ad_edit_phone")],
-        [InlineKeyboardButton("✏️ Цена",     callback_data="ad_edit_price"),
-         InlineKeyboardButton("✏️ Описание", callback_data="ad_edit_desc")],
-        [InlineKeyboardButton("✏️ Снимки",   callback_data="ad_edit_photo")],
-        [InlineKeyboardButton("❌ Отмена",   callback_data="ad_cancel")],
+        [InlineKeyboardButton(t("btn_publish", lang), callback_data="ad_publish")],
+        [InlineKeyboardButton(t("btn_edit_address", lang),    callback_data="ad_edit_address"),
+         InlineKeyboardButton(t("btn_edit_phone", lang),  callback_data="ad_edit_phone")],
+        [InlineKeyboardButton(t("btn_edit_price", lang),     callback_data="ad_edit_price"),
+         InlineKeyboardButton(t("btn_edit_desc", lang), callback_data="ad_edit_desc")],
+        [InlineKeyboardButton(t("btn_edit_photos", lang),   callback_data="ad_edit_photo")],
+        [InlineKeyboardButton(t("btn_cancel", lang),   callback_data="ad_cancel")],
     ])
 
     chat_id = update.effective_chat.id
@@ -1005,8 +1025,8 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
             full_message = f"⭐ *Обявата от вашите любими е обновена!*\n\n{notification_text}\n\n{'─'*30}\n\n{caption}"
             
             buttons = [
-                [InlineKeyboardButton("💔 Премахни от любими", callback_data=f"unfav_{listing_id}")],
-                [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{listing_id}")],
+                [InlineKeyboardButton(t("btn_remove_favorite", lang), callback_data=f"unfav_{listing_id}")],
+                [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{listing_id}")],
             ]
             
             if photos and len(photos) > 1:
@@ -1126,7 +1146,7 @@ async def notify_subscribers(ctx, listing_id: int, action: str, ltype: str, lat:
             
             # Простая кнопка "На карте"
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{listing_id}")],
+                [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{listing_id}")],
             ])
             
             # Отправляем с фото если есть (новый формат JSON)
@@ -1171,12 +1191,15 @@ async def notify_subscribers(ctx, listing_id: int, action: str, ltype: str, lat:
 async def ad_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    
+    lang = get_user_lang(query.from_user.id, ctx)
+    ctx.user_data["lang"] = lang
     if query.data == "ad_cancel":
         try:
-            await query.edit_message_text("❌ Обявата е отменена.", reply_markup=home_ikb())
+            await query.edit_message_text("❌ Объявление отменено.", reply_markup=home_ikb(lang=lang))
         except Exception as e:
             logger.warning(f"Could not edit message, sending new one: {e}")
-            await query.message.reply_text("❌ Обявата е отменена.", reply_markup=home_ikb())
+            await query.message.reply_text("❌ Объявление отменено.", reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
 
     ad   = ctx.user_data.get("ad", {})
@@ -1204,9 +1227,9 @@ async def ad_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        await query.edit_message_text("✅ Обявата е публикувана!", reply_markup=home_ikb())
+        await query.edit_message_text("✅ Объявление опубликовано!", reply_markup=home_ikb(lang=lang))
     except Exception:
-        await query.message.reply_text("✅ Обявата е публикувана!", reply_markup=home_ikb())
+        await query.message.reply_text("✅ Объявление опубликовано!", reply_markup=home_ikb(lang=lang))
     return MAIN_MENU
 
 # ═══════════════════════════════════════════════════════════════
@@ -1230,7 +1253,7 @@ async def search_location_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(
             "✏️ Въведете *вашия адрес*:\n\n"
             "Например: _ул. Цар Симеон I 15_\n\n"
-            "Ботът ще го намери на картата и ще предложи радиус за търсене.",
+            "Бот найдёт его на карте и ще предложи радиус за търсене.",
             parse_mode="Markdown"
         )
         return SEARCH_ADDRESS_TEXT
@@ -1241,7 +1264,7 @@ async def search_location_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             "• Натиснете бутона «Изпращане на моята геолокация» по-долу\n"
             "• Или чрез кламер 📎 → Геолокация → намерете място на картата → Изпращане"
         )
-        await query.message.reply_text("Изберете начин:", reply_markup=geo_search_keyboard())
+        await query.message.reply_text("Выберите способ:", reply_markup=geo_search_keyboard())
         return SEARCH_GEO
 
 async def search_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1269,12 +1292,12 @@ async def search_geo_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["search_lat"] = loc.latitude
     ctx.user_data["search_lon"] = loc.longitude
     await update.message.reply_text(
-        "📏 Изберете *радиус поиска*:",
+        t("search_radius_question", lang),
         parse_mode="Markdown", 
         reply_markup=ReplyKeyboardRemove()  # Убираем кнопку геолокации
     )
     await update.message.reply_text(
-        "Изберете радиус:",
+        "Выберите радиус:",
         reply_markup=radius_keyboard()
     )
     return SEARCH_RADIUS
@@ -1344,8 +1367,8 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"😕 В радиус {rl} няма намерени обяви.\n\n"
             f"💡 Искате ли да получавате известия когато се появи подходяща обява?",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔔 Абонамент за известия (⭐100 ≈ 2€)", callback_data="subscribe")],
-                [InlineKeyboardButton("🔄 Промяна на радиус", callback_data="change_radius")],
+                [InlineKeyboardButton(t("btn_subscribe_notifications", lang), callback_data="subscribe")],
+                [InlineKeyboardButton(t("btn_change_radius", lang), callback_data="change_radius")],
                 [InlineKeyboardButton("🏠 Начало",      callback_data="go_home")],
             ])
         )
@@ -1417,12 +1440,12 @@ async def show_search_page(message, ctx, page=0):
         ).fetchone()
         conn.close()
 
-        fav_text = "💔 Премахни от любими" if in_fav else "⭐ В любими"
+        fav_text = t("btn_remove_favorite", lang) if in_fav else "⭐ В любими"
         fav_action = f"unfav_{lid}" if in_fav else f"fav_{lid}"
         
         if dist is not None:
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{lid}"),
+                [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{lid}"),
                  InlineKeyboardButton(fav_text, callback_data=fav_action)],
             ])
         else:
@@ -1444,10 +1467,10 @@ async def show_search_page(message, ctx, page=0):
     
     # Кнопка "Вперед" если не последняя страница
     if page < total_pages - 1:
-        nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"search_page_{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(t("btn_next", lang), callback_data=f"search_page_{page+1}"))
     
     # Кнопка "На главную" всегда
-    home_button = [InlineKeyboardButton("🏠 Начало", callback_data="go_home")]
+    home_button = [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]
     
     # Формируем клавиатуру
     keyboard_rows = []
@@ -1484,7 +1507,7 @@ async def search_page_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def change_radius(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("📏 Изберете радиус:", reply_markup=radius_keyboard())
+    await query.edit_message_text("📏 Выберите радиус:", reply_markup=radius_keyboard())
     return SEARCH_RADIUS
 
 # ── Карта ─────────────────────────────────────────────────────
@@ -1501,7 +1524,7 @@ async def show_map(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_location(latitude=row[0], longitude=row[1])
         await query.message.reply_text(f"📍 {row[2]}")
     else:
-        await query.answer("Геолокацията не е указана", show_alert=True)
+        await query.answer("Геолокация не указана", show_alert=True)
     
     return MAIN_MENU
 
@@ -1515,7 +1538,7 @@ async def reveal_contacts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     # Проверяем не купил ли уже
     if has_purchased_contacts(buyer_id, lid):
-        await query.answer("Вече сте закупили достъп до тези контакти!", show_alert=True)
+        await query.answer("Вы уже купили доступ до тези контакти!", show_alert=True)
         return MAIN_MENU
     
     # Получаем информацию об обявиении
@@ -1528,7 +1551,7 @@ async def reveal_contacts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return MAIN_MENU
     
     ltype, address = row
-    type_label = TYPE_LABEL.get(ltype, ltype)
+    type_label = get_type_label(ltype, lang)
     
     # Формируем инвойс для Telegram Stars
     title = f"Доступ к контактам"
@@ -1593,7 +1616,7 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
             if row:
                 caption = listing_text(row)
                 keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{lid}")],
+                    [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{lid}")],
                 ])
                 
                 await update.message.reply_text(
@@ -1623,7 +1646,7 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
     if not params:
         await query.message.reply_text(
             "❌ Параметрите на търсенето са загубени, повторете търсенето.",
-            reply_markup=home_ikb()
+            reply_markup=home_ikb(lang=lang)
         )
         return MAIN_MENU
 
@@ -1638,7 +1661,7 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
     if existing:
         await query.message.reply_text(
             "ℹ️ Вече имате активен абонамент с тези параметри!",
-            reply_markup=home_ikb()
+            reply_markup=home_ikb(lang=lang)
         )
         return MAIN_MENU
 
@@ -1661,9 +1684,9 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
         await query.message.reply_text(
             "✅ *Абонаментът е активиран!* (безплатно за администратор)\n\n"
             "Ще получавате известия за нови обяви, които отговарят на вашите критерии.\n"
-            f"Валиден до: {expires_at[:10]}",
+            f"Действительна до: {expires_at[:10]}",
             parse_mode="Markdown",
-            reply_markup=home_ikb()
+            reply_markup=home_ikb(lang=lang)
         )
         return MAIN_MENU
 
@@ -1684,7 +1707,7 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
             payload=f"subscription_{user_id}_{params['search_type']}_{params['action']}",
             provider_token="",  # Empty for Stars
             currency="XTR",  # Telegram Stars
-            prices=[LabeledPrice(label="Абонамент 30 дни", amount=100)],  # 100 Stars
+            prices=[LabeledPrice(label="Подписка 30 дней", amount=100)],  # 100 Stars
         )
         await query.message.reply_text(
             "💳 *Изпратено е известие за плащане.*\n\n"
@@ -1695,7 +1718,7 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
         logger.error(f"Invoice send error: {e}")
         await query.message.reply_text(
             "❌ Грешка при създаване на плащане. Моля опитайте отново.",
-            reply_markup=home_ikb()
+            reply_markup=home_ikb(lang=lang)
         )
 
     return MAIN_MENU
@@ -1737,7 +1760,7 @@ async def handle_successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TY
         f"• Валиден: 30 дни\n\n"
         f"Ще получавате известия за нови обяви!",
         parse_mode="Markdown",
-        reply_markup=home_ikb()
+        reply_markup=home_ikb(lang=lang)
     )
     
     # Очищаем временные данные
@@ -1805,10 +1828,10 @@ async def contact_send(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ctx.bot.send_message(owner_id,
             f"📩 *Сообщение* по обявиению #{lid}\nОт: {user.full_name} ({uinfo})\n\n{text}",
             parse_mode="Markdown")
-        await update.message.reply_text("✅ Отправлено!", reply_markup=home_ikb())
+        await update.message.reply_text("✅ Отправлено!", reply_markup=home_ikb(lang=lang))
     except Exception as e:
         logger.error(f"Failed to send message to owner {owner_id} for listing {lid}: {e}", exc_info=True)
-        await update.message.reply_text("✅ Запазено.", reply_markup=home_ikb())
+        await update.message.reply_text("✅ Запазено.", reply_markup=home_ikb(lang=lang))
     return MAIN_MENU
 
 # ── Мои обявиения ────────────────────────────────────────────
@@ -1818,16 +1841,16 @@ async def show_my_listings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     rows    = conn.execute("SELECT * FROM listings WHERE owner_id=? ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
     conn.close()
     if not rows:
-        await update.message.reply_text("Все още нямате обяви.", reply_markup=home_ikb())
+        await update.message.reply_text(t("my_listings_empty", lang), reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
-    await update.message.reply_text(f"📁 Вашите обяви ({len(rows)}):", reply_markup=home_ikb())
+    await update.message.reply_text(ft("msg_28557652", lang), reply_markup=home_ikb(lang=lang))
     for row in rows:
         lid, active = row[0], row[12]
         status  = "✅ Активна" if active else "⏸ Неактивна"
         caption = listing_text(row) + f"\n{status}"
         btns = [
-            [InlineKeyboardButton("✏️ Редактиране", callback_data=f"edit_{lid}"),
-             InlineKeyboardButton("🗑 Изтрий",      callback_data=f"delete_{lid}")],
+            [InlineKeyboardButton(t("btn_edit", lang), callback_data=f"edit_{lid}"),
+             InlineKeyboardButton(t("btn_delete", lang),      callback_data=f"delete_{lid}")],
         ]
         kb = InlineKeyboardMarkup(btns)
         await send_listing(update.message, caption, row, kb)
@@ -1859,7 +1882,7 @@ async def manage_listing(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("💰 Цена",     callback_data=f"editfield_price_{lid}"),
                  InlineKeyboardButton("📝 Описание", callback_data=f"editfield_desc_{lid}")],
                 [InlineKeyboardButton("📸 Снимки",   callback_data=f"editfield_photo_{lid}")],
-                [InlineKeyboardButton("🗑 Изтрий обявата", callback_data=f"delete_{lid}")],
+                [InlineKeyboardButton(t("btn_delete_listing", lang), callback_data=f"delete_{lid}")],
                 [InlineKeyboardButton("🏠 Начало",   callback_data="go_home")],
             ])
         )
@@ -1914,10 +1937,10 @@ async def editfield_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "photo":   "📸 Изпратете нови *снимки* (до 5, или «-» за да премахнете всички):",
     }
     await query.message.reply_text(
-        prompts.get(field, "Въведете нова стойност:"),
+        prompts.get(field, "Введите новое значение:"),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Отказ", callback_data="go_home")
+            InlineKeyboardButton(t("btn_cancel", lang), callback_data="go_home")
         ]])
     )
     return EDIT_FIELD
@@ -1944,7 +1967,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     old_listing = conn.execute("SELECT * FROM listings WHERE id=?", (lid,)).fetchone()
     if not old_listing:
         conn.close()
-        await update.message.reply_text("❌ Обява не е намерена!", reply_markup=home_ikb())
+        await update.message.reply_text("❌ Обява не е намерена!", reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
     
     old_address = old_listing[5]
@@ -1974,7 +1997,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 c.commit(); c.close()
                 await context.job.data["message"].reply_text(
                     f"✅ Снимките са обновени ({len(photos_list)} бр.)!",
-                    reply_markup=home_ikb()
+                    reply_markup=home_ikb(lang=lang)
                 )
                 
                 # Уведомляем подписчиков избранного
@@ -1995,7 +2018,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             conn.execute("UPDATE listings SET photo_id=NULL WHERE id=?", (lid,))
             conn.commit(); conn.close()
             ctx.user_data.pop("editfield_photos" if not is_admin_edit else "adm_editfield_photos", None)
-            await update.message.reply_text("✅ Снимките са премахнати!", reply_markup=home_ikb())
+            await update.message.reply_text("✅ Снимките са премахнати!", reply_markup=home_ikb(lang=lang))
             
             # Уведомляем подписчиков избранного
             await notify_favorites_changes(ctx.bot, lid, "photo", "removed", None)
@@ -2014,7 +2037,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lat, lon, display = result
             conn.execute("UPDATE listings SET address=?, lat=?, lon=? WHERE id=?", (display, lat, lon, lid))
             conn.commit(); conn.close()
-            await update.message.reply_text(f"✅ Адресът е обновен: {display}", reply_markup=home_ikb())
+            await update.message.reply_text(ft("msg_24862390", lang), reply_markup=home_ikb(lang=lang))
             
             # Уведомляем подписчиков избранного
             await notify_favorites_changes(ctx.bot, lid, "address", old_address, display)
@@ -2027,7 +2050,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         val = None if text == "-" else text
         conn.execute("UPDATE listings SET phone=? WHERE id=?", (val, lid))
         conn.commit(); conn.close()
-        await update.message.reply_text("✅ Телефонът е обновен!", reply_markup=home_ikb())
+        await update.message.reply_text("✅ Телефонът е обновен!", reply_markup=home_ikb(lang=lang))
         
         # Уведомляем подписчиков избранного
         await notify_favorites_changes(ctx.bot, lid, "phone", old_phone, val)
@@ -2037,20 +2060,20 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             price = float(text.replace(",", ".").replace(" ", ""))
             conn.execute("UPDATE listings SET price=? WHERE id=?", (price, lid))
             conn.commit(); conn.close()
-            await update.message.reply_text(f"✅ Цената е обновена: {price:,.0f} €", reply_markup=home_ikb())
+            await update.message.reply_text(ft("msg_16219521", lang), reply_markup=home_ikb(lang=lang))
             
             # Уведомляем подписчиков избранного
             await notify_favorites_changes(ctx.bot, lid, "price", old_price, price)
         except ValueError:
             conn.close()
-            await update.message.reply_text("❌ Въведете число, например: 5000")
+            await update.message.reply_text("❌ Введите число, например: 5000")
             return EDIT_FIELD
 
     elif field == "desc":
         val = None if text == "-" else text
         conn.execute("UPDATE listings SET description=? WHERE id=?", (val, lid))
         conn.commit(); conn.close()
-        await update.message.reply_text("✅ Описанието е обновено!", reply_markup=home_ikb())
+        await update.message.reply_text("✅ Описанието е обновено!", reply_markup=home_ikb(lang=lang))
         
         # Уведомляем подписчиков избранного
         await notify_favorites_changes(ctx.bot, lid, "description", old_desc, val)
@@ -2091,7 +2114,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.execute("DELETE FROM search_subscriptions WHERE id=?", (sub_id,))
         conn.commit()
         await query.answer("🗑 Абонаментът е изтрит")
-        await query.message.reply_text(f"🗑 Абонамент #{sub_id} удалена.")
+        await query.message.reply_text(ft("msg_87056062", lang))
     
     conn.close()
     await query.edit_message_reply_markup(None)
@@ -2119,8 +2142,8 @@ async def manage_subscription(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"✏️ *Редактиране на абонамент #{sub_id}*\n\nИзберете какво да промените:",
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📏 Радиус", callback_data=f"editsub_radius_{sub_id}")],
-                    [InlineKeyboardButton("🔙 Назад", callback_data="go_home")],
+                    [InlineKeyboardButton(t("btn_radius", lang), callback_data=f"editsub_radius_{sub_id}")],
+                    [InlineKeyboardButton(t("btn_back", lang), callback_data="go_home")],
                 ])
             )
             return MAIN_MENU
@@ -2163,7 +2186,7 @@ async def confirm_listing(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"✅ Обява *#{lid}* е потвърдена! Ще бъде активна още 7 дни.",
         parse_mode="Markdown",
-        reply_markup=home_ikb()
+        reply_markup=home_ikb(lang=lang)
     )
     return MAIN_MENU
 
@@ -2180,7 +2203,7 @@ async def show_map(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.execute("UPDATE listings SET views = COALESCE(views, 0) + 1 WHERE id=?", (lid,))
 
     if not row or not row[0]:
-        await query.answer("Геолокацията не е налична", show_alert=True)
+        await query.answer("Геолокация недоступна", show_alert=True)
         return MAIN_MENU
 
     lat, lon, address = row
@@ -2207,7 +2230,7 @@ async def fix_addresses_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 fixed += 1
     conn.commit()
     conn.close()
-    await update.message.reply_text(f"✅ Готово! Обновлено обявиений: {fixed}")
+    await update.message.reply_text(ft("msg_51256208", lang))
     return MAIN_MENU
 
 async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -2222,8 +2245,8 @@ async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
     await update.message.reply_text(
         f"🔧 *Админ-панель ParkPlace Varna*\n\n"
-        f"📋 Обяви: *{total}* (активных: {active})\n"
-        f"👥 Потребители: *{users}* · ✉️ Сообщений: *{msgs}*",
+        f"📋 Объявления: *{total}* (активных: {active})\n"
+        f"👥 Пользователи: *{users}* · ✉️ Сообщений: *{msgs}*",
         parse_mode="Markdown", reply_markup=admin_keyboard()
     )
     return ADMIN_MENU
@@ -2266,7 +2289,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if (page+1)*PAGE_SIZE < total:
             nav.append(InlineKeyboardButton("▶️", callback_data=f"adm_listings_{page+1}"))
         if nav: btns.append(nav)
-        btns.append([InlineKeyboardButton("↩️ В меню", callback_data="adm_menu")])
+        btns.append([InlineKeyboardButton(t("btn_to_menu", lang), callback_data="adm_menu")])
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(btns))
         return ADMIN_MENU
 
@@ -2279,8 +2302,8 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
         await query.edit_message_text(
             f"🔧 *Админ-панель*\n\n"
-            f"📋 Обяви: {total} (активных: {active})\n"
-            f"👥 Потребители: {users} · ✉️ Сообщений: {msgs}",
+            f"📋 Объявления: {total} (активных: {active})\n"
+            f"👥 Пользователи: {users} · ✉️ Сообщений: {msgs}",
             parse_mode="Markdown", reply_markup=admin_keyboard()
         )
         return ADMIN_MENU
@@ -2294,8 +2317,8 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = "👥 *Пользователи:*\n\n"
         for uid, name, cnt in rows:
             text += f"• {name or '—'} · `{uid}` · {cnt} обяви\n"
-        await query.edit_message_text(text or "Нет пользователей.", parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ В меню", callback_data="adm_menu")]]))
+        await query.edit_message_text(text or t("msg_55100489", lang), parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_to_menu", lang), callback_data="adm_menu")]]))
         return ADMIN_MENU
 
     elif data == "adm_stats":
@@ -2316,9 +2339,9 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"💰 Продажа: {sell} · 📋 Аренда: {lease}\n"
             f"🅿️ Парковок: {parking} · 🚘 Гаражей: {garage}\n"
             f"🗺 С геолокацией: {geo}\n\n"
-            f"👥 Потребители: {users} · ✉️ Сообщений: {msgs}",
+            f"👥 Пользователи: {users} · ✉️ Сообщений: {msgs}",
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ В меню", callback_data="adm_menu")]]))
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_to_menu", lang), callback_data="adm_menu")]]))
         return ADMIN_MENU
 
     elif data == "adm_broadcast":
@@ -2357,12 +2380,12 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         # Кнопки редактирования
         edit_btns = [
-            [InlineKeyboardButton("✏️ Адрес",    callback_data=f"adm_editfield_address_{lid}")],
-            [InlineKeyboardButton("✏️ Телефон",  callback_data=f"adm_editfield_phone_{lid}")],
-            [InlineKeyboardButton("✏️ Цена",     callback_data=f"adm_editfield_price_{lid}")],
-            [InlineKeyboardButton("✏️ Описание", callback_data=f"adm_editfield_desc_{lid}")],
-            [InlineKeyboardButton("✏️ Снимки",   callback_data=f"adm_editfield_photo_{lid}")],
-            [InlineKeyboardButton("↩️ Назад",    callback_data=f"adm_listings_{page}")],
+            [InlineKeyboardButton(t("btn_edit_address", lang),    callback_data=f"adm_editfield_address_{lid}")],
+            [InlineKeyboardButton(t("btn_edit_phone", lang),  callback_data=f"adm_editfield_phone_{lid}")],
+            [InlineKeyboardButton(t("btn_edit_price", lang),     callback_data=f"adm_editfield_price_{lid}")],
+            [InlineKeyboardButton(t("btn_edit_desc", lang), callback_data=f"adm_editfield_desc_{lid}")],
+            [InlineKeyboardButton(t("btn_edit_photos", lang),   callback_data=f"adm_editfield_photo_{lid}")],
+            [InlineKeyboardButton(t("btn_back", lang),    callback_data=f"adm_listings_{page}")],
         ]
         
         chat_id = query.message.chat_id
@@ -2443,7 +2466,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if (page+1)*PAGE_SIZE < total:
             nav.append(InlineKeyboardButton("▶️", callback_data=f"adm_listings_{page+1}"))
         if nav: btns.append(nav)
-        btns.append([InlineKeyboardButton("↩️ В меню", callback_data="adm_menu")])
+        btns.append([InlineKeyboardButton(t("btn_to_menu", lang), callback_data="adm_menu")])
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(btns))
         return ADMIN_MENU
 
@@ -2465,10 +2488,10 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "photo":   "📸 Изпратете нови *снимки* (до 5, или «-» за да премахнете всички):",
         }
         await query.message.reply_text(
-            prompts.get(field, "Въведете нова стойност:"),
+            prompts.get(field, "Введите новое значение:"),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("❌ Отказ", callback_data="go_home")
+                InlineKeyboardButton(t("btn_cancel", lang), callback_data="go_home")
             ]])
         )
         return EDIT_FIELD
@@ -2524,13 +2547,13 @@ async def cmd_my(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not rows:
-        await update.message.reply_text("Все още нямате обяви.", reply_markup=home_ikb())
+        await update.message.reply_text(t("my_listings_empty", lang), reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
 
     # Сохраняем в user_data для пагинации
     ctx.user_data["my_listings"] = rows
     
-    await update.message.reply_text(f"📁 *Вашите обяви* ({len(rows)})", parse_mode="Markdown")
+    await update.message.reply_text(t("my_listings_title", lang, count=len(rows)), parse_mode="Markdown")
     
     # Показываем первую страницу
     await show_my_listings_page(update.message, ctx, page=0)
@@ -2562,8 +2585,8 @@ async def show_my_listings_page(message, ctx, page=0):
         caption = listing_text(row)
         status = "✅ Активна" if active else "⏸ Неактивна"
         buttons = [
-            [InlineKeyboardButton("✏️ Редактиране", callback_data=f"edit_{lid}"),
-             InlineKeyboardButton("🗑 Изтрий",      callback_data=f"delete_{lid}")],
+            [InlineKeyboardButton(t("btn_edit", lang), callback_data=f"edit_{lid}"),
+             InlineKeyboardButton(t("btn_delete", lang),      callback_data=f"delete_{lid}")],
         ]
         kb2 = InlineKeyboardMarkup(buttons)
         await send_listing(message, f"{caption}\n\n{status}", row, kb2)
@@ -2575,9 +2598,9 @@ async def show_my_listings_page(message, ctx, page=0):
     nav_buttons = []
     
     if page < total_pages - 1:
-        nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"my_page_{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(t("btn_next", lang), callback_data=f"my_page_{page+1}"))
     
-    home_button = [InlineKeyboardButton("🏠 Начало", callback_data="go_home")]
+    home_button = [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]
     
     keyboard_rows = []
     if nav_buttons:
@@ -2624,10 +2647,10 @@ async def cmd_subscriptions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not rows:
-        await update.message.reply_text("🔔 Нямате абонаменти.", reply_markup=home_ikb())
+        await update.message.reply_text("🔔 Нямате абонаменти.", reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
 
-    await update.message.reply_text(f"🔔 *Вашите абонаменти* ({len(rows)})", parse_mode="Markdown")
+    await update.message.reply_text(ft("msg_23108270", lang), parse_mode="Markdown")
     import datetime
     for sub_id, stype, act, radius, created, expires, active in rows:
         radius_text = f"{radius//1000} км" if radius >= 1000 else f"{radius} м"
@@ -2650,14 +2673,14 @@ async def cmd_subscriptions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{status}"
         )
         btns = [
-            [InlineKeyboardButton("✏️ Редактиране", callback_data=f"editsub_{sub_id}")],
+            [InlineKeyboardButton(t("btn_edit", lang), callback_data=f"editsub_{sub_id}")],
         ]
         if active:
-            btns.append([InlineKeyboardButton("⏸ Изключване", callback_data=f"unsub_{sub_id}"),
-                         InlineKeyboardButton("🗑 Изтрий", callback_data=f"delsub_{sub_id}")])
+            btns.append([InlineKeyboardButton(t("btn_pause", lang), callback_data=f"unsub_{sub_id}"),
+                         InlineKeyboardButton(t("btn_delete", lang), callback_data=f"delsub_{sub_id}")])
         else:
-            btns.append([InlineKeyboardButton("▶️ Включване", callback_data=f"resub_{sub_id}"),
-                         InlineKeyboardButton("🗑 Изтрий", callback_data=f"delsub_{sub_id}")])
+            btns.append([InlineKeyboardButton(t("btn_resume", lang), callback_data=f"resub_{sub_id}"),
+                         InlineKeyboardButton(t("btn_delete", lang), callback_data=f"delsub_{sub_id}")])
         
         await update.message.reply_text(
             text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(btns)
@@ -2668,20 +2691,20 @@ async def cmd_subscriptions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Команда /help — помощ."""
     text = (
-        "*ParkPlace Varna — паркоместа и гаражи*\n\n"
+        "*ParkPlace Varna — парковки и гаражи**\n\n"
         "🛒 *Купува / Наем* — търсене на обект\n"
         "💰 *Продава / Под наем* — публикуване на обява\n"
         "⭐ *Любими* — запазени обяви\n"
         "🔔 *Абонаменти* — известия за нови обяви (⭐100 ≈ 2€)\n\n"
         "*Команди:*\n"
         "/start — Главно меню\n"
-        "/my — Моите обяви\n"
-        "/favorites — Любими\n"
-        "/subscriptions — Абонаменти\n"
-        "/help — Помощ\n\n"
+        "/my — Мои объявления\n"
+        "/favorites — Избранное\n"
+        "/subscriptions — Подписки\n"
+        "/help — Помощь\n\n"
         "_Обявите се изтриват автоматично ако не са потвърдени в рамките на 7 дни_"
     )
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=home_ikb())
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=home_ikb(lang=lang))
     return MAIN_MENU
 
 
@@ -2709,9 +2732,9 @@ async def show_favorites(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not favorites:
         text = "⭐ Все още нямате любими обяви.\n\nДобавяйте обяви в любими, за да не ги загубите!"
         if query:
-            await query.edit_message_text(text, reply_markup=home_ikb())
+            await query.edit_message_text(text, reply_markup=home_ikb(lang=lang))
         else:
-            await update.message.reply_text(text, reply_markup=home_ikb())
+            await update.message.reply_text(text, reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
 
     # Сохраняем для пагинации
@@ -2751,8 +2774,8 @@ async def show_favorites_page(message, ctx, page=0):
         lid = row[0]
         caption = listing_text(row)
         buttons = [
-            [InlineKeyboardButton("💔 Премахни от любими", callback_data=f"unfav_{lid}")],
-            [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{lid}")],
+            [InlineKeyboardButton(t("btn_remove_favorite", lang), callback_data=f"unfav_{lid}")],
+            [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{lid}")],
         ]
         keyboard = InlineKeyboardMarkup(buttons)
         try:
@@ -2768,12 +2791,12 @@ async def show_favorites_page(message, ctx, page=0):
     nav_buttons = []
     
     if page < total_pages - 1:
-        nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"fav_page_{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(t("btn_next", lang), callback_data=f"fav_page_{page+1}"))
     
     keyboard_rows = []
     if nav_buttons:
         keyboard_rows.append(nav_buttons)
-    keyboard_rows.append([InlineKeyboardButton("🏠 Начало", callback_data="go_home")])
+    keyboard_rows.append([InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")])
     
     await message.reply_text(
         f"📄 Страница {page + 1} от {total_pages} (общо {total} обяви)",
@@ -2815,7 +2838,7 @@ async def toggle_favorite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             conn.commit()
             await query.answer("⭐ Добавено в любими!", show_alert=True)
         except Exception:
-            await query.answer("Вече в любими", show_alert=True)
+            await query.answer("Уже в избранном", show_alert=True)
     else:
         conn.execute("DELETE FROM favorites WHERE user_id=? AND listing_id=?", (user_id, lid))
         conn.commit()
@@ -2824,6 +2847,33 @@ async def toggle_favorite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     return MAIN_MENU
 
+
+async def cmd_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
+        [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
+    ])
+    if update.message:
+        await update.message.reply_text(t("language_choose", lang), parse_mode="Markdown", reply_markup=keyboard)
+    else:
+        await update.callback_query.edit_message_text(t("language_choose", lang), parse_mode="Markdown", reply_markup=keyboard)
+    return MAIN_MENU
+
+async def set_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    new_lang = query.data.replace("lang_", "")
+    set_user_lang(user_id, new_lang, ctx)
+    ctx.user_data["lang"] = new_lang
+    await query.edit_message_text(t("language_changed", new_lang), parse_mode="Markdown")
+    await asyncio.sleep(1)
+    await query.message.reply_text(t("welcome", new_lang), parse_mode="Markdown", reply_markup=action_keyboard(new_lang))
+    return MAIN_MENU
 
 def main():
     # Создаём директорию для данных если не существует (для Railway Volume)
@@ -2882,12 +2932,14 @@ def main():
             CommandHandler("favorites",     cmd_favorites),
             CommandHandler("subscriptions", cmd_subscriptions),
             CommandHandler("help",          cmd_help),
+            CommandHandler("language", cmd_language),
             CommandHandler("admin",         admin_cmd),
             CommandHandler("fixaddresses",  fix_addresses_cmd),
         ],
         states={
             MAIN_MENU: [
                 CallbackQueryHandler(go_home,              pattern="^go_home$"),
+                CallbackQueryHandler(set_language, pattern="^lang_(bg|ru)$"),
                 CallbackQueryHandler(search_page_handler,  pattern="^search_page_"),
                 CallbackQueryHandler(my_listings_page_handler, pattern="^my_page_"),
                 CallbackQueryHandler(favorites_page_handler, pattern="^fav_page_"),
@@ -2900,6 +2952,7 @@ def main():
                 CallbackQueryHandler(manage_subscription,  pattern="^(unsub|resub|delsub|editsub)_"),
                 CallbackQueryHandler(confirm_listing,      pattern="^confirm_listing_"),
                 CallbackQueryHandler(start_action,         pattern="^start_"),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, main_menu),
             ],
             # Подача обявиения
@@ -2913,7 +2966,7 @@ def main():
             ],
             AD_ADDRESS_TEXT: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_address_text),
             ],
             AD_ADDRESS_CONFIRM: [
@@ -2922,7 +2975,7 @@ def main():
             ],
             AD_LOCATION_GEO: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.LOCATION, ad_location_geo),
             ],
             AD_PHONE: [
@@ -2931,11 +2984,11 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_phone),
             ],
             AD_PRICE: [
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_price),
             ],
             AD_DESCRIPTION: [
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_description),
             ],
             AD_PHOTO: [
@@ -2960,12 +3013,12 @@ def main():
             ],
             SEARCH_ADDRESS_TEXT: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, search_address_text),
             ],
             SEARCH_GEO: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.LOCATION, search_geo_input),
             ],
             SEARCH_RADIUS: [
@@ -2983,7 +3036,7 @@ def main():
                 CallbackQueryHandler(admin_callback, pattern="^adm_"),
             ],
             ADMIN_BROADCAST: [
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_broadcast_send),
             ],
             EDIT_FIELD: [
@@ -3029,14 +3082,13 @@ def main():
     # Глобальный handler для кнопки "🏠 Начало" - работает даже если ConversationHandler потерял состояние
     async def global_home_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Сбрасывает состояние и возвращает в главное меню."""
-        ctx.user_data.clear()
         await update.message.reply_text(
-            "🚗 *ParkPlace Varna*\nКакво искате да направите?",
+            "🚗 *ParkPlace Varna*\nЧто вы хотите сделать?",
             parse_mode="Markdown", 
             reply_markup=action_keyboard()
         )
     
-    app.add_handler(MessageHandler(filters.Regex("^🏠 Начало$"), global_home_button))
+    app.add_handler(MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), global_home_button))
     
     # Устанавливаем команды для меню бота
     async def post_init(application):
@@ -3044,9 +3096,9 @@ def main():
         await application.bot.delete_my_commands(scope=BotCommandScopeDefault())
         commands = [
             BotCommand("start",         "🏠 Главно меню"),
-            BotCommand("my",            "📁 Моите обяви"),
-            BotCommand("favorites",     "⭐ Любими"),
-            BotCommand("subscriptions", "🔔 Абонаменти"),
+            BotCommand("my",            "📁 Мои объявления"),
+            BotCommand("favorites",     "⭐ Избранное"),
+            BotCommand("subscriptions", "🔔 Подписки"),
             BotCommand("help",          "ℹ️ Помощ"),
         ]
         await application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
@@ -3070,11 +3122,11 @@ def main():
                     await context.bot.send_message(
                         owner_id,
                         f"⏰ *Обява #{lid}* е публикувана преди повече от 7 дни.\n\n"
-                        f"Все още ли е актуална? Потвърдете в рамките на 48 часа, иначе ще бъде изтрита автоматично.",
+                        f"Ещё актуально? Потвърдете в рамките на 48 часа, иначе ще бъде изтрита автоматично.",
                         parse_mode="Markdown",
                         reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("✅ Да, актуална е", callback_data=f"confirm_listing_{lid}")],
-                            [InlineKeyboardButton("🗑 Изтрий я",       callback_data=f"delete_{lid}")],
+                            [InlineKeyboardButton(t("btn_yes_actual", lang), callback_data=f"confirm_listing_{lid}")],
+                            [InlineKeyboardButton(t("btn_delete_it", lang),       callback_data=f"delete_{lid}")],
                         ])
                     )
                     # Обновляем confirmed_at чтобы не слать повторно
@@ -3146,3 +3198,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# ── /language - Смена языка ───────────────────────────────────
