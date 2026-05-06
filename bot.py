@@ -390,11 +390,21 @@ async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
+    
+    # КРИТИЧНО: Сохраняем язык ДО очистки
     saved_lang = ctx.user_data.get("lang")
     ctx.user_data.clear()
+    
+    # Восстанавливаем язык
     if saved_lang:
         ctx.user_data["lang"] = saved_lang
+    
+    # Получаем язык (из кэша или БД)
     lang = get_user_lang(user_id, ctx)
+    
+    # Убеждаемся что он в кэше
+    ctx.user_data["lang"] = lang
+    
     try:
         await query.edit_message_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
     except Exception:
