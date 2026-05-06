@@ -291,6 +291,15 @@ def back_and_home_ikb(back_action="go_home"):
 
 def action_keyboard(lang='bg'):
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton(t("btn_buy", lang), callback_data="start_buy"), InlineKeyboardButton(t("btn_sell", lang), callback_data="start_sell")],
+        [InlineKeyboardButton(t("btn_rent", lang), callback_data="start_rent"), InlineKeyboardButton(t("btn_lease", lang), callback_data="start_lease")],
+        [InlineKeyboardButton(t("btn_my_listings", lang), callback_data="start_mylistings"), InlineKeyboardButton(t("btn_favorites", lang), callback_data="start_favorites")],
+        [InlineKeyboardButton(t("btn_subscriptions", lang), callback_data="start_subscriptions")],
+        [InlineKeyboardButton(t("btn_language", lang), callback_data="start_language")],
+    ])
+
+def OLD_action_keyboard(lang='bg'):
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Купува",         callback_data="start_buy"),
          InlineKeyboardButton("💰 Продава",        callback_data="start_sell")],
         [InlineKeyboardButton("🔑 Наем",           callback_data="start_rent"),
@@ -357,46 +366,38 @@ def admin_keyboard():
 # ── /start ────────────────────────────────────────────────────
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
+    user_id = update.effective_user.id
+    saved_lang = ctx.user_data.get("lang")
     ctx.user_data.clear()
+    if saved_lang:
+        ctx.user_data["lang"] = saved_lang
+    
+    lang = get_user_lang(user_id, ctx)
+    if not lang or lang == 'bg':
+        detected_lang = detect_telegram_lang(update)
+        if detected_lang != lang:
+            set_user_lang(user_id, detected_lang, ctx)
+            lang = detected_lang
     
     if update.message:
-        await update.message.reply_text(
-            "🚗 *Добре дошли в ParkPlace Varna!*\n\n"
-            "Пазар за паркоместа и гаражи във Варна.\n\n"
-            "Изберете действие от менюто:",
-            parse_mode="Markdown", 
-            reply_markup=action_keyboard()
-        )
+        await update.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
     else:
-        await update.callback_query.message.reply_text(
-            "🚗 *Добре дошли в ParkPlace Varna!*\n\n"
-            "Пазар за паркоместа и гаражи във Варна.\n\n"
-            "Изберете действие от менюто:",
-            parse_mode="Markdown",
-            reply_markup=action_keyboard()
-        )
+        await update.callback_query.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
     return MAIN_MENU
 
 async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = update.effective_user.id
+    saved_lang = ctx.user_data.get("lang")
     ctx.user_data.clear()
-    
-    # Редактируем существующее сообщение
+    if saved_lang:
+        ctx.user_data["lang"] = saved_lang
+    lang = get_user_lang(user_id, ctx)
     try:
-        await query.edit_message_text(
-            "🚗 *ParkPlace Varna*\n\nКакво искате да направите?",
-            parse_mode="Markdown",
-            reply_markup=action_keyboard()
-        )
+        await query.edit_message_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
     except Exception:
-        # Если не можем отредактировать (например, медиагруппа), отправляем новое
-        await query.message.reply_text(
-            "🚗 *ParkPlace Varna*\n\nКакво искате да направите?",
-            parse_mode="Markdown",
-            reply_markup=action_keyboard()
-        )
-    
+        await query.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
     return MAIN_MENU
 
 # ── Текстовое меню ────────────────────────────────────────────
@@ -444,8 +445,23 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     action = query.data.replace("start_", "")
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
 
-    # Любими
+    if action == "language":
+        return await cmd_language(update, ctx)
+    
+    if action in ["buy", "sell", "rent", "lease"]:
+        ctx.user_data["action"] = action
+        if action in ["sell", "lease"]:
+            ctx.user_data["ad"] = {"action": action}
+            await query.edit_message_text(t("ad_type_question", lang, action=get_action_label(action, lang)), parse_mode="Markdown", reply_markup=type_keyboard("adtype", lang=lang))
+            return AD_TYPE
+        else:
+            ctx.user_data["search_action"] = action
+            await query.edit_message_text(t("search_type_question", lang), parse_mode="Markdown", reply_markup=type_keyboard("stype", include_all=True, lang=lang))
+            return SEARCH_TYPE
+
     if action == "favorites":
         return await show_favorites(update, ctx)
 
@@ -2882,12 +2898,14 @@ def main():
             CommandHandler("favorites",     cmd_favorites),
             CommandHandler("subscriptions", cmd_subscriptions),
             CommandHandler("help",          cmd_help),
+            CommandHandler("language", cmd_language),
             CommandHandler("admin",         admin_cmd),
             CommandHandler("fixaddresses",  fix_addresses_cmd),
         ],
         states={
             MAIN_MENU: [
                 CallbackQueryHandler(go_home,              pattern="^go_home$"),
+                CallbackQueryHandler(set_language, pattern="^lang_(bg|ru)$"),
                 CallbackQueryHandler(search_page_handler,  pattern="^search_page_"),
                 CallbackQueryHandler(my_listings_page_handler, pattern="^my_page_"),
                 CallbackQueryHandler(favorites_page_handler, pattern="^fav_page_"),
@@ -3146,3 +3164,29 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# ── /language - Смена языка ───────────────────────────────────
+async def cmd_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
+        [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
+    ])
+    if update.message:
+        await update.message.reply_text(t("language_choose", lang), parse_mode="Markdown", reply_markup=keyboard)
+    else:
+        await update.callback_query.edit_message_text(t("language_choose", lang), parse_mode="Markdown", reply_markup=keyboard)
+    return MAIN_MENU
+
+async def set_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    new_lang = query.data.replace("lang_", "")
+    set_user_lang(user_id, new_lang, ctx)
+    await query.edit_message_text(t("language_changed", new_lang), parse_mode="Markdown")
+    await asyncio.sleep(1)
+    await query.message.reply_text(t("welcome", new_lang), parse_mode="Markdown", reply_markup=action_keyboard(new_lang))
+    return MAIN_MENU
