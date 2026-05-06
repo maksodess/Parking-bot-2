@@ -347,11 +347,11 @@ def phone_keyboard():
 
 def radius_keyboard(lang="bg"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("500 м", callback_data="radius_500"),
-         InlineKeyboardButton("1 км",  callback_data="radius_1000")],
-        [InlineKeyboardButton("2 км",  callback_data="radius_2000"),
-         InlineKeyboardButton("5 км",  callback_data="radius_5000")],
-        [InlineKeyboardButton("📋 Цяла Варна", callback_data="radius_all")],
+        [InlineKeyboardButton(t("search_radius_500m", lang), callback_data="radius_500"),
+         InlineKeyboardButton(t("search_radius_1km", lang), callback_data="radius_1000")],
+        [InlineKeyboardButton(t("search_radius_2km", lang), callback_data="radius_2000"),
+         InlineKeyboardButton(t("search_radius_5km", lang), callback_data="radius_5000")],
+        [InlineKeyboardButton(t("search_radius_all", lang), callback_data="radius_all")],
         [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
     ])
 
@@ -396,7 +396,10 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    saved_lang = ctx.user_data.get("lang")
     ctx.user_data.clear()
+    if saved_lang:
+        ctx.user_data["lang"] = saved_lang
     
     user_id = update.effective_user.id
     lang = get_user_lang(user_id, ctx)
@@ -545,7 +548,7 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not rows:
-            await query.edit_message_text("Все още нямате обяви.", reply_markup=home_ikb(lang=lang))
+            await query.edit_message_text(t("my_listings_empty", lang), reply_markup=home_ikb(lang=lang))
             return MAIN_MENU
         
         # Сохраняем для пагинации
@@ -571,8 +574,7 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         if not rows:
             await query.edit_message_text(
-                "🔔 Нямате активни абонаменти.\n\n"
-                "Абонаментите позволяват получаване на известия о новых обявиениях.",
+                t("subscriptions_empty", lang),
                 reply_markup=home_ikb(lang=lang)
             )
             return MAIN_MENU
@@ -1405,7 +1407,7 @@ async def search_geo_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove()  # Убираем кнопку геолокации
     )
     await update.message.reply_text(
-        "Изберете радиус:",
+        t("search_radius_question", lang),
         reply_markup=radius_keyboard(lang=lang)
     )
     return SEARCH_RADIUS
@@ -1949,7 +1951,7 @@ async def show_my_listings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     rows    = conn.execute("SELECT * FROM listings WHERE owner_id=? ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
     conn.close()
     if not rows:
-        await update.message.reply_text("Все още нямате обяви.", reply_markup=home_ikb(lang=lang))
+        await update.message.reply_text(t("my_listings_empty", lang), reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
     await update.message.reply_text(f"📁 Вашите обяви ({len(rows)}):", reply_markup=home_ikb(lang=lang))
     for row in rows:
@@ -2658,7 +2660,7 @@ async def cmd_my(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not rows:
-        await update.message.reply_text("Все още нямате обяви.", reply_markup=home_ikb(lang=lang))
+        await update.message.reply_text(t("my_listings_empty", lang), reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
 
     # Сохраняем в user_data для пагинации
