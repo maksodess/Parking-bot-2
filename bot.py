@@ -411,7 +411,7 @@ async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
     
-    if text == "🏠 Начало":
+    if text in ["🏠 Начало", "🏠 Главная"]:
         lang = get_user_lang(user_id, ctx)
         ctx.user_data["lang"] = lang
         await update.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
@@ -2967,7 +2967,7 @@ def main():
             ],
             AD_ADDRESS_TEXT: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_address_text),
             ],
             AD_ADDRESS_CONFIRM: [
@@ -2976,7 +2976,7 @@ def main():
             ],
             AD_LOCATION_GEO: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.LOCATION, ad_location_geo),
             ],
             AD_PHONE: [
@@ -2985,11 +2985,11 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_phone),
             ],
             AD_PRICE: [
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_price),
             ],
             AD_DESCRIPTION: [
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_description),
             ],
             AD_PHOTO: [
@@ -3014,12 +3014,12 @@ def main():
             ],
             SEARCH_ADDRESS_TEXT: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, search_address_text),
             ],
             SEARCH_GEO: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.LOCATION, search_geo_input),
             ],
             SEARCH_RADIUS: [
@@ -3037,7 +3037,7 @@ def main():
                 CallbackQueryHandler(admin_callback, pattern="^adm_"),
             ],
             ADMIN_BROADCAST: [
-                MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_broadcast_send),
             ],
             EDIT_FIELD: [
@@ -3089,7 +3089,7 @@ def main():
             reply_markup=action_keyboard()
         )
     
-    app.add_handler(MessageHandler(filters.Regex("^🏠 Начало$"), global_home_button))
+    app.add_handler(MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), global_home_button))
     
     # Устанавливаем команды для меню бота
     async def post_init(application):
