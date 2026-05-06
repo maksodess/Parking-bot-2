@@ -23,6 +23,9 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, ContextTypes, filters
 )
 
+# Импорт модуля локализации
+from messages import t, get_user_lang, set_user_lang, detect_telegram_lang
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
 ADMIN_ID   = 5053888378
 
@@ -100,6 +103,11 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
             listing_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')),
             UNIQUE(user_id, listing_id)
+        );
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            language TEXT DEFAULT 'bg',
+            created_at TEXT DEFAULT (datetime('now'))
         );
     """)
     
@@ -279,38 +287,39 @@ def main_keyboard():
     from telegram import ReplyKeyboardRemove
     return ReplyKeyboardRemove()
 
-def home_ikb():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Начало", callback_data="go_home")]])
+def home_ikb(lang="bg"):
+    return InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]])
 
 def back_and_home_ikb(back_action="go_home"):
     """Кнопки Назад + На главную."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("◀️ Назад", callback_data=back_action)],
-        [InlineKeyboardButton("🏠 Начало", callback_data="go_home")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
     ])
 
-def action_keyboard():
+def action_keyboard(lang='bg'):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🛒 Купува",         callback_data="start_buy"),
-         InlineKeyboardButton("💰 Продава",        callback_data="start_sell")],
-        [InlineKeyboardButton("🔑 Наем",           callback_data="start_rent"),
-         InlineKeyboardButton("📋 Под наем",       callback_data="start_lease")],
-        [InlineKeyboardButton("📁 Моите обяви", callback_data="start_mylistings"),
-         InlineKeyboardButton("⭐ Любими",       callback_data="start_favorites")],
-        [InlineKeyboardButton("🔔 Абонаменти",   callback_data="start_subscriptions")],
+        [InlineKeyboardButton(t("btn_buy", lang),         callback_data="start_buy"),
+         InlineKeyboardButton(t("btn_sell", lang),        callback_data="start_sell")],
+        [InlineKeyboardButton(t("btn_rent", lang),        callback_data="start_rent"),
+         InlineKeyboardButton(t("btn_lease", lang),       callback_data="start_lease")],
+        [InlineKeyboardButton(t("btn_my_listings", lang), callback_data="start_mylistings"),
+         InlineKeyboardButton(t("btn_favorites", lang),   callback_data="start_favorites")],
+        [InlineKeyboardButton(t("btn_subscriptions", lang), callback_data="start_subscriptions")],
+        [InlineKeyboardButton(t("btn_language", lang),    callback_data="start_language")],
     ])
 
-def type_keyboard(prefix, include_all=False):
+def type_keyboard(prefix, include_all=False, lang="bg"):
     rows = [
-        [InlineKeyboardButton("🅿️ Паркомясто", callback_data=f"{prefix}_parking")],
-        [InlineKeyboardButton("🚘 Гараж",       callback_data=f"{prefix}_garage")],
+        [InlineKeyboardButton(t("type_parking", lang), callback_data=f"{prefix}_parking")],
+        [InlineKeyboardButton(t("type_garage", lang), callback_data=f"{prefix}_garage")],
     ]
     if include_all:
         rows.append([InlineKeyboardButton("📋 Всичко наведнъж", callback_data=f"{prefix}_all")])
-    rows.append([InlineKeyboardButton("🏠 Начало", callback_data="go_home")])
+    rows.append([InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")])
     return InlineKeyboardMarkup(rows)
 
-def location_choice_keyboard(prefix):
+def location_choice_keyboard(prefix, lang="bg"):
     """Выбор способа указания местоположения."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✏️ Въвеждане на адрес",       callback_data=f"{prefix}_text")],
@@ -335,14 +344,14 @@ def phone_keyboard():
         [KeyboardButton("⏩ Пропускане")],
     ], resize_keyboard=True, one_time_keyboard=True)
 
-def radius_keyboard():
+def radius_keyboard(lang="bg"):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("500 м", callback_data="radius_500"),
          InlineKeyboardButton("1 км",  callback_data="radius_1000")],
         [InlineKeyboardButton("2 км",  callback_data="radius_2000"),
          InlineKeyboardButton("5 км",  callback_data="radius_5000")],
         [InlineKeyboardButton("📋 Цяла Варна", callback_data="radius_all")],
-        [InlineKeyboardButton("🏠 Начало", callback_data="go_home")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
     ])
 
 def admin_keyboard():
@@ -359,21 +368,27 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
     ctx.user_data.clear()
     
+    user_id = update.effective_user.id
+    
+    # Автоопределяне език при първо използване
+    lang = get_user_lang(user_id, ctx)
+    if not lang or lang == 'bg':
+        detected_lang = detect_telegram_lang(update)
+        if detected_lang != lang:
+            set_user_lang(user_id, detected_lang, ctx)
+            lang = detected_lang
+    
     if update.message:
         await update.message.reply_text(
-            "🚗 *Добре дошли в ParkPlace Varna!*\n\n"
-            "Пазар за паркоместа и гаражи във Варна.\n\n"
-            "Изберете действие от менюто:",
+            t("welcome", lang),
             parse_mode="Markdown", 
-            reply_markup=action_keyboard()
+            reply_markup=action_keyboard(lang)
         )
     else:
         await update.callback_query.message.reply_text(
-            "🚗 *Добре дошли в ParkPlace Varna!*\n\n"
-            "Пазар за паркоместа и гаражи във Варна.\n\n"
-            "Изберете действие от менюто:",
+            t("welcome", lang),
             parse_mode="Markdown",
-            reply_markup=action_keyboard()
+            reply_markup=action_keyboard(lang)
         )
     return MAIN_MENU
 
@@ -382,19 +397,22 @@ async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     ctx.user_data.clear()
     
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     # Редактируем существующее сообщение
     try:
         await query.edit_message_text(
-            "🚗 *ParkPlace Varna*\n\nКакво искате да направите?",
+            t("welcome", lang),
             parse_mode="Markdown",
-            reply_markup=action_keyboard()
+            reply_markup=action_keyboard(lang)
         )
     except Exception:
         # Если не можем отредактировать (например, медиагруппа), отправляем новое
         await query.message.reply_text(
-            "🚗 *ParkPlace Varna*\n\nКакво искате да направите?",
+            t("welcome", lang),
             parse_mode="Markdown",
-            reply_markup=action_keyboard()
+            reply_markup=action_keyboard(lang)
         )
     
     return MAIN_MENU
@@ -429,6 +447,56 @@ async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Какво искате да направите?", reply_markup=action_keyboard())
     return MAIN_MENU
 
+# ── /language - Смяна на език ─────────────────────────────────
+async def cmd_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Показва менюто за смяна на език."""
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
+        [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
+    ])
+    
+    if update.message:
+        await update.message.reply_text(
+            t("language_choose", lang),
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+    else:
+        await update.callback_query.edit_message_text(
+            t("language_choose", lang),
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+    return MAIN_MENU
+
+async def set_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Записва избрания език."""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    new_lang = query.data.replace("lang_", "")
+    
+    set_user_lang(user_id, new_lang, ctx)
+    
+    await query.edit_message_text(
+        t("language_changed", new_lang),
+        parse_mode="Markdown"
+    )
+    
+    # Показваме главното меню с новия език
+    await asyncio.sleep(1)
+    await query.message.reply_text(
+        t("welcome", new_lang),
+        parse_mode="Markdown",
+        reply_markup=action_keyboard(new_lang)
+    )
+    return MAIN_MENU
+
 # ── Выбор действия ────────────────────────────────────────────
 
 async def home_button_pressed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -444,6 +512,10 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     action = query.data.replace("start_", "")
+
+    # Смяна на език
+    if action == "language":
+        return await cmd_language(update, ctx)
 
     # Любими
     if action == "favorites":
@@ -590,6 +662,9 @@ async def ad_type_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # Выбор способа — текст или геолокация
 async def ad_location_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
     query = update.callback_query
     await query.answer()
 
@@ -1213,6 +1288,9 @@ async def ad_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ПОИСК
 # ═══════════════════════════════════════════════════════════════
 async def search_type_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
     query = update.callback_query
     await query.answer()
     ctx.user_data["search_type"] = query.data.replace("stype_", "")
@@ -1223,6 +1301,9 @@ async def search_type_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return SEARCH_LOCATION_CHOICE
 
 async def search_location_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
     query = update.callback_query
     await query.answer()
 
@@ -1447,7 +1528,7 @@ async def show_search_page(message, ctx, page=0):
         nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"search_page_{page+1}"))
     
     # Кнопка "На главную" всегда
-    home_button = [InlineKeyboardButton("🏠 Начало", callback_data="go_home")]
+    home_button = [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]
     
     # Формируем клавиатуру
     keyboard_rows = []
@@ -2515,6 +2596,9 @@ async def admin_broadcast_send(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ══════════════════════════════════════════════════════════════
 
 async def cmd_my(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
     """Команда /my — моите обяви."""
     user_id = update.effective_user.id
     conn = db()
@@ -2577,7 +2661,7 @@ async def show_my_listings_page(message, ctx, page=0):
     if page < total_pages - 1:
         nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"my_page_{page+1}"))
     
-    home_button = [InlineKeyboardButton("🏠 Начало", callback_data="go_home")]
+    home_button = [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]
     
     keyboard_rows = []
     if nav_buttons:
@@ -2608,6 +2692,9 @@ async def my_listings_page_handler(update: Update, ctx: ContextTypes.DEFAULT_TYP
 
 
 async def cmd_favorites(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
     """Команда /favorites — любими."""
     return await show_favorites(update, ctx)
 
@@ -2666,6 +2753,9 @@ async def cmd_subscriptions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
     """Команда /help — помощ."""
     text = (
         "*ParkPlace Varna — паркоместа и гаражи*\n\n"
@@ -2773,7 +2863,7 @@ async def show_favorites_page(message, ctx, page=0):
     keyboard_rows = []
     if nav_buttons:
         keyboard_rows.append(nav_buttons)
-    keyboard_rows.append([InlineKeyboardButton("🏠 Начало", callback_data="go_home")])
+    keyboard_rows.append([InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")])
     
     await message.reply_text(
         f"📄 Страница {page + 1} от {total_pages} (общо {total} обяви)",
@@ -2882,12 +2972,14 @@ def main():
             CommandHandler("favorites",     cmd_favorites),
             CommandHandler("subscriptions", cmd_subscriptions),
             CommandHandler("help",          cmd_help),
+            CommandHandler("language",      cmd_language),
             CommandHandler("admin",         admin_cmd),
             CommandHandler("fixaddresses",  fix_addresses_cmd),
         ],
         states={
             MAIN_MENU: [
                 CallbackQueryHandler(go_home,              pattern="^go_home$"),
+                CallbackQueryHandler(set_language,         pattern="^lang_(bg|ru)$"),
                 CallbackQueryHandler(search_page_handler,  pattern="^search_page_"),
                 CallbackQueryHandler(my_listings_page_handler, pattern="^my_page_"),
                 CallbackQueryHandler(favorites_page_handler, pattern="^fav_page_"),
@@ -2913,6 +3005,8 @@ def main():
             ],
             AD_ADDRESS_TEXT: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
+        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_address_text),
             ],
@@ -2922,11 +3016,15 @@ def main():
             ],
             AD_LOCATION_GEO: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
+        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
                 MessageHandler(filters.LOCATION, ad_location_geo),
             ],
             AD_PHONE: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
+        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 MessageHandler(filters.CONTACT, ad_phone),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_phone),
             ],
@@ -2940,6 +3038,8 @@ def main():
             ],
             AD_PHOTO: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
+        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 CallbackQueryHandler(ad_photo, pattern="^photos_done$"),
                 MessageHandler(filters.PHOTO, ad_photo),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_photo),
@@ -2960,11 +3060,15 @@ def main():
             ],
             SEARCH_ADDRESS_TEXT: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
+        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, search_address_text),
             ],
             SEARCH_GEO: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
+        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
                 MessageHandler(filters.LOCATION, search_geo_input),
             ],
