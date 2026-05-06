@@ -3005,7 +3005,7 @@ def main():
             ],
             AD_ADDRESS_TEXT: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(set_language, pattern="^lang_(bg|ru)$"),
         CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_address_text),
@@ -3016,14 +3016,14 @@ def main():
             ],
             AD_LOCATION_GEO: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(set_language, pattern="^lang_(bg|ru)$"),
         CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
                 MessageHandler(filters.LOCATION, ad_location_geo),
             ],
             AD_PHONE: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(set_language, pattern="^lang_(bg|ru)$"),
         CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 MessageHandler(filters.CONTACT, ad_phone),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ad_phone),
@@ -3038,7 +3038,7 @@ def main():
             ],
             AD_PHOTO: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(set_language, pattern="^lang_(bg|ru)$"),
         CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 CallbackQueryHandler(ad_photo, pattern="^photos_done$"),
                 MessageHandler(filters.PHOTO, ad_photo),
@@ -3060,14 +3060,14 @@ def main():
             ],
             SEARCH_ADDRESS_TEXT: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(set_language, pattern="^lang_(bg|ru)$"),
         CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, search_address_text),
             ],
             SEARCH_GEO: [
                 CallbackQueryHandler(go_home, pattern="^go_home$"),
-        CallbackQueryHandler(language_callback, pattern="^lang_(bg|ru)$"),
+        CallbackQueryHandler(set_language, pattern="^lang_(bg|ru)$"),
         CallbackQueryHandler(cmd_language, pattern="^start_language$"),
                 MessageHandler(filters.Regex("^🏠 Начало$"), home_button_pressed),
                 MessageHandler(filters.LOCATION, search_geo_input),
