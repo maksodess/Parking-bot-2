@@ -388,16 +388,14 @@ async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = update.effective_user.id
     
-    # КРИТИЧНО: Сохраняем язык ДО очистки
-    
-    # Восстанавливаем язык
+    # Сохраняем язык перед очисткой
+    saved_lang = ctx.user_data.get("lang")
+    ctx.user_data.clear()
     if saved_lang:
         ctx.user_data["lang"] = saved_lang
     
-    # Получаем язык (из кэша или БД)
+    # Получаем язык
     lang = get_user_lang(user_id, ctx)
-    
-    # Убеждаемся что он в кэше
     ctx.user_data["lang"] = lang
     
     try:
