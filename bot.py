@@ -367,10 +367,6 @@ def admin_keyboard():
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
     user_id = update.effective_user.id
-    saved_lang = ctx.user_data.get("lang")
-    ctx.user_data.clear()
-    if saved_lang:
-        ctx.user_data["lang"] = saved_lang
     
     lang = get_user_lang(user_id, ctx)
     ctx.user_data["lang"] = lang
@@ -379,6 +375,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if detected_lang != lang:
             set_user_lang(user_id, detected_lang, ctx)
             lang = detected_lang
+            ctx.user_data["lang"] = lang
     
     if update.message:
         await update.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
@@ -392,8 +389,6 @@ async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     # КРИТИЧНО: Сохраняем язык ДО очистки
-    saved_lang = ctx.user_data.get("lang")
-    ctx.user_data.clear()
     
     # Восстанавливаем язык
     if saved_lang:
@@ -417,10 +412,6 @@ async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     
     if text == "🏠 Начало":
-        saved_lang = ctx.user_data.get("lang")
-        ctx.user_data.clear()
-        if saved_lang:
-            ctx.user_data["lang"] = saved_lang
         lang = get_user_lang(user_id, ctx)
         ctx.user_data["lang"] = lang
         await update.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
@@ -433,10 +424,6 @@ async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def home_button_pressed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Обработка Reply-кнопки 'На главную' из любого состояния."""
-    saved_lang = ctx.user_data.get("lang")
-    ctx.user_data.clear()
-    if saved_lang:
-        ctx.user_data["lang"] = saved_lang
     await update.message.reply_text(
         "🚗 *ParkPlace Varna*\nКакво искате да направите?",
         parse_mode="Markdown", reply_markup=action_keyboard()
@@ -2864,6 +2851,7 @@ async def set_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     new_lang = query.data.replace("lang_", "")
     set_user_lang(user_id, new_lang, ctx)
+    ctx.user_data["lang"] = new_lang
     await query.edit_message_text(t("language_changed", new_lang), parse_mode="Markdown")
     await asyncio.sleep(1)
     await query.message.reply_text(t("welcome", new_lang), parse_mode="Markdown", reply_markup=action_keyboard(new_lang))
@@ -3075,10 +3063,6 @@ def main():
     # Глобальный handler для кнопки "🏠 Начало" - работает даже если ConversationHandler потерял состояние
     async def global_home_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Сбрасывает состояние и возвращает в главное меню."""
-        saved_lang = ctx.user_data.get("lang")
-        ctx.user_data.clear()
-        if saved_lang:
-            ctx.user_data["lang"] = saved_lang
         await update.message.reply_text(
             "🚗 *ParkPlace Varna*\nКакво искате да направите?",
             parse_mode="Markdown", 
