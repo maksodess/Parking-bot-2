@@ -373,6 +373,7 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["lang"] = saved_lang
     
     lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
     if not lang or lang == 'bg':
         detected_lang = detect_telegram_lang(update)
         if detected_lang != lang:
@@ -447,6 +448,7 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     action = query.data.replace("start_", "")
     user_id = query.from_user.id
     lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
 
     if action == "language":
         return await cmd_language(update, ctx)
@@ -2843,6 +2845,7 @@ async def toggle_favorite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
         [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
