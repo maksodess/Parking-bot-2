@@ -2841,6 +2841,31 @@ async def toggle_favorite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return MAIN_MENU
 
 
+async def cmd_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
+        [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
+    ])
+    if update.message:
+        await update.message.reply_text(t("language_choose", lang), parse_mode="Markdown", reply_markup=keyboard)
+    else:
+        await update.callback_query.edit_message_text(t("language_choose", lang), parse_mode="Markdown", reply_markup=keyboard)
+    return MAIN_MENU
+
+async def set_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    new_lang = query.data.replace("lang_", "")
+    set_user_lang(user_id, new_lang, ctx)
+    await query.edit_message_text(t("language_changed", new_lang), parse_mode="Markdown")
+    await asyncio.sleep(1)
+    await query.message.reply_text(t("welcome", new_lang), parse_mode="Markdown", reply_markup=action_keyboard(new_lang))
+    return MAIN_MENU
+
 def main():
     # Создаём директорию для данных если не существует (для Railway Volume)
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -3166,27 +3191,3 @@ if __name__ == "__main__":
     main()
 
 # ── /language - Смена языка ───────────────────────────────────
-async def cmd_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    lang = get_user_lang(user_id, ctx)
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
-        [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
-        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
-    ])
-    if update.message:
-        await update.message.reply_text(t("language_choose", lang), parse_mode="Markdown", reply_markup=keyboard)
-    else:
-        await update.callback_query.edit_message_text(t("language_choose", lang), parse_mode="Markdown", reply_markup=keyboard)
-    return MAIN_MENU
-
-async def set_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    user_id = update.effective_user.id
-    new_lang = query.data.replace("lang_", "")
-    set_user_lang(user_id, new_lang, ctx)
-    await query.edit_message_text(t("language_changed", new_lang), parse_mode="Markdown")
-    await asyncio.sleep(1)
-    await query.message.reply_text(t("welcome", new_lang), parse_mode="Markdown", reply_markup=action_keyboard(new_lang))
-    return MAIN_MENU
