@@ -547,3 +547,119 @@ LANG["ru"].update({
 # Дополнительные переводы
 LANG["bg"]["subscriptions_title"] = "🔔 Вашите абонаменти ({count}):"
 LANG["ru"]["subscriptions_title"] = "🔔 Ваши подписки ({count}):"
+
+# === ДОПОЛНИТЕЛЬНЫЕ ПЕРЕВОДЫ - КНОПКИ И СООБЩЕНИЯ ===
+
+# Болгарский
+LANG["bg"].update({
+    # Кнопки геолокации
+    "btn_send_location_object": "📍 Изпращане на геолокация на обекта",
+    "btn_send_my_location": "📍 Изпращане на моята геолокация",
+    "btn_send_phone": "📱 Изпращане на моя номер",
+    "btn_skip": "⏩ Пропускане",
+    "btn_enter_address": "✏️ Въвеждане на адрес",
+    "btn_send_location": "📍 Изпращане на геолокация",
+    
+    # Подтверждение адреса
+    "btn_yes_correct": "✅ Да, правилно",
+    "btn_no_retry": "❌ Не, въведи отново",
+    "btn_clarify_geo": "📍 Уточни с геолокация",
+    
+    # Фото
+    "btn_skip_no_photos": "⏩ Пропускане (без снимки)",
+    "btn_done": "Готово",
+    
+    # Публикация и редактирование
+    "btn_publish": "✅ Публикуване",
+    "btn_edit_address": "✏️ Адрес",
+    "btn_edit_phone": "✏️ Телефон",
+    "btn_edit_price": "✏️ Цена",
+    "btn_edit_desc": "✏️ Описание",
+    "btn_edit_photos": "✏️ Снимки",
+    "btn_cancel": "❌ Отмена",
+    "btn_edit": "✏️ Редактиране",
+    "btn_delete_listing": "🗑 Изтрий обявата",
+    
+    # Избранное и карта
+    "btn_remove_favorite": "💔 Премахни от любими",
+    "btn_on_map": "🗺 На картата",
+    
+    # Подписки
+    "btn_subscribe_notifications": "🔔 Абонамент за известия (⭐100 ≈ 2€)",
+    "btn_change_radius": "🔄 Промяна на радиус",
+    "btn_pause": "⏸ Изключване",
+    "btn_resume": "▶️ Включване",
+    "btn_delete": "🗑 Изтрий",
+    "btn_radius": "📏 Радиус",
+    
+    # Навигация
+    "btn_next": "Напред ▶️",
+    "btn_prev": "◀️ Назад",
+    "btn_to_menu": "↩️ В меню",
+    
+    # Подтверждение
+    "btn_yes_actual": "✅ Да, актуална е",
+    "btn_delete_it": "🗑 Изтрий я",
+    
+    # Сообщения
+    "msg_varna_only": "💡 Този бот е само за обяви във Варна и околностите.",
+    "msg_determining_address": "🔍 Определям адрес по геолокация...",
+    "msg_choose_varna_location": "Моля, изберете локация във Варна.",
+})
+
+# Русский
+LANG["ru"].update({
+    # Кнопки геолокации
+    "btn_send_location_object": "📍 Отправить геолокацию объекта",
+    "btn_send_my_location": "📍 Отправить мою геолокацию",
+    "btn_send_phone": "📱 Отправить мой номер",
+    "btn_skip": "⏩ Пропустить",
+    "btn_enter_address": "✏️ Ввести адрес",
+    "btn_send_location": "📍 Отправить геолокацию",
+    
+    # Подтверждение адреса
+    "btn_yes_correct": "✅ Да, правильно",
+    "btn_no_retry": "❌ Нет, ввести заново",
+    "btn_clarify_geo": "📍 Уточнить геолокацией",
+    
+    # Фото
+    "btn_skip_no_photos": "⏩ Пропустить (без фото)",
+    "btn_done": "Готово",
+    
+    # Публикация и редактирование
+    "btn_publish": "✅ Опубликовать",
+    "btn_edit_address": "✏️ Адрес",
+    "btn_edit_phone": "✏️ Телефон",
+    "btn_edit_price": "✏️ Цена",
+    "btn_edit_desc": "✏️ Описание",
+    "btn_edit_photos": "✏️ Фото",
+    "btn_cancel": "❌ Отмена",
+    "btn_edit": "✏️ Редактировать",
+    "btn_delete_listing": "🗑 Удалить объявление",
+    
+    # Избранное и карта
+    "btn_remove_favorite": "💔 Убрать из избранного",
+    "btn_on_map": "🗺 На карте",
+    
+    # Подписки
+    "btn_subscribe_notifications": "🔔 Подписка на уведомления (⭐100 ≈ 2€)",
+    "btn_change_radius": "🔄 Изменить радиус",
+    "btn_pause": "⏸ Приостановить",
+    "btn_resume": "▶️ Возобновить",
+    "btn_delete": "🗑 Удалить",
+    "btn_radius": "📏 Радиус",
+    
+    # Навигация
+    "btn_next": "Вперёд ▶️",
+    "btn_prev": "◀️ Назад",
+    "btn_to_menu": "↩️ В меню",
+    
+    # Подтверждение
+    "btn_yes_actual": "✅ Да, актуально",
+    "btn_delete_it": "🗑 Удалить",
+    
+    # Сообщения
+    "msg_varna_only": "💡 Этот бот только для объявлений в Варне и окрестностях.",
+    "msg_determining_address": "🔍 Определяю адрес по геолокации...",
+    "msg_choose_varna_location": "Пожалуйста, выберите локацию в Варне.",
+})
