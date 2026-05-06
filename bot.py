@@ -416,7 +416,10 @@ async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
     text = update.message.text
     if text == "🏠 Начало":
+        saved_lang = ctx.user_data.get("lang")
         ctx.user_data.clear()
+        if saved_lang:
+            ctx.user_data["lang"] = saved_lang
         await update.message.reply_text(
             "🚗 *ParkPlace Varna*\nКакво искате да направите?",
             parse_mode="Markdown", 
@@ -445,7 +448,10 @@ async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def home_button_pressed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Обработка Reply-кнопки 'На главную' из любого состояния."""
+    saved_lang = ctx.user_data.get("lang")
     ctx.user_data.clear()
+    if saved_lang:
+        ctx.user_data["lang"] = saved_lang
     await update.message.reply_text(
         "🚗 *ParkPlace Varna*\nКакво искате да направите?",
         parse_mode="Markdown", reply_markup=action_keyboard()
@@ -3084,7 +3090,10 @@ def main():
     # Глобальный handler для кнопки "🏠 Начало" - работает даже если ConversationHandler потерял состояние
     async def global_home_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Сбрасывает состояние и возвращает в главное меню."""
+        saved_lang = ctx.user_data.get("lang")
         ctx.user_data.clear()
+        if saved_lang:
+            ctx.user_data["lang"] = saved_lang
         await update.message.reply_text(
             "🚗 *ParkPlace Varna*\nКакво искате да направите?",
             parse_mode="Markdown", 
