@@ -280,13 +280,13 @@ def main_keyboard():
     return ReplyKeyboardRemove()
 
 def home_ikb(lang='bg'):
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Начало", callback_data="go_home")]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]])
 
 def back_and_home_ikb(back_action="go_home"):
     """Кнопки Назад + На главную."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Назад", callback_data=back_action)],
-        [InlineKeyboardButton("🏠 Начало", callback_data="go_home")],
+        [InlineKeyboardButton(t("btn_back", lang), callback_data=back_action)],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
     ])
 
 def action_keyboard(lang='bg'):
@@ -316,7 +316,7 @@ def type_keyboard(prefix, include_all=False, lang='bg'):
     ]
     if include_all:
         rows.append([InlineKeyboardButton("📋 Всичко наведнъж", callback_data=f"{prefix}_all")])
-    rows.append([InlineKeyboardButton("🏠 Начало", callback_data="go_home")])
+    rows.append([InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")])
     return InlineKeyboardMarkup(rows)
 
 def location_choice_keyboard(prefix, lang='bg'):
@@ -351,7 +351,7 @@ def radius_keyboard(lang='bg'):
         [InlineKeyboardButton("2 км",  callback_data="radius_2000"),
          InlineKeyboardButton("5 км",  callback_data="radius_5000")],
         [InlineKeyboardButton("📋 Цяла Варна", callback_data="radius_all")],
-        [InlineKeyboardButton("🏠 Начало", callback_data="go_home")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
     ])
 
 def admin_keyboard():
@@ -424,6 +424,23 @@ async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def home_button_pressed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Обработка Reply-кнопки 'На главную' из любого состояния."""
+    saved_lang = ctx.user_data.get("lang")
+    ctx.user_data.clear()
+    if saved_lang:
+        ctx.user_data["lang"] = saved_lang
+    
+    lang = get_user_lang(update.effective_user.id, ctx)
+    ctx.user_data["lang"] = lang
+    
+    await update.message.reply_text(
+        t("welcome", lang),
+        parse_mode="Markdown", 
+        reply_markup=action_keyboard(lang)
+    )
+    return MAIN_MENU
+
+async def OLD_home_button_pressed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """СТАРАЯ ВЕРСИЯ - НЕ ИСПОЛЬЗУЕТСЯ"""
     await update.message.reply_text(
         "🚗 *ParkPlace Varna*\nКакво искате да направите?",
         parse_mode="Markdown", reply_markup=action_keyboard()
@@ -1176,6 +1193,9 @@ async def notify_subscribers(ctx, listing_id: int, action: str, ltype: str, lat:
 async def ad_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    
+    lang = get_user_lang(query.from_user.id, ctx)
+    ctx.user_data["lang"] = lang
     if query.data == "ad_cancel":
         try:
             await query.edit_message_text("❌ Обявата е отменена.", reply_markup=home_ikb(lang=lang))
@@ -1452,7 +1472,7 @@ async def show_search_page(message, ctx, page=0):
         nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"search_page_{page+1}"))
     
     # Кнопка "На главную" всегда
-    home_button = [InlineKeyboardButton("🏠 Начало", callback_data="go_home")]
+    home_button = [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]
     
     # Формируем клавиатуру
     keyboard_rows = []
@@ -2582,7 +2602,7 @@ async def show_my_listings_page(message, ctx, page=0):
     if page < total_pages - 1:
         nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"my_page_{page+1}"))
     
-    home_button = [InlineKeyboardButton("🏠 Начало", callback_data="go_home")]
+    home_button = [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]
     
     keyboard_rows = []
     if nav_buttons:
@@ -2778,7 +2798,7 @@ async def show_favorites_page(message, ctx, page=0):
     keyboard_rows = []
     if nav_buttons:
         keyboard_rows.append(nav_buttons)
-    keyboard_rows.append([InlineKeyboardButton("🏠 Начало", callback_data="go_home")])
+    keyboard_rows.append([InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")])
     
     await message.reply_text(
         f"📄 Страница {page + 1} от {total_pages} (общо {total} обяви)",
