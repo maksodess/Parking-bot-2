@@ -2954,6 +2954,7 @@ def main():
                 CallbackQueryHandler(manage_subscription,  pattern="^(unsub|resub|delsub|editsub)_"),
                 CallbackQueryHandler(confirm_listing,      pattern="^confirm_listing_"),
                 CallbackQueryHandler(start_action,         pattern="^start_"),
+                MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), home_button_pressed),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, main_menu),
             ],
             # Подача обявиения
