@@ -450,14 +450,19 @@ def get_user_lang(user_id: int, ctx=None) -> str:
         
         if result and result["language"]:
             lang = result["language"]
+            # КРИТИЧНО: Сохраняем в кэш
             if ctx:
-                ctx.user_data["lang"] = lang  # Кэшируем
+                ctx.user_data["lang"] = lang
             return lang
     except Exception:
         pass
     
     # 3. По умолчанию
-    return "bg"
+    default_lang = "bg"
+    # КРИТИЧНО: Сохраняем дефолт в кэш
+    if ctx:
+        ctx.user_data["lang"] = default_lang
+    return default_lang
 
 
 # Сохранить язык
