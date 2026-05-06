@@ -416,7 +416,7 @@ async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return await show_my_listings(update, ctx)
     elif text == "ℹ️ Помощ":
         await update.message.reply_text(
-            "*Как да използвате:*\n\n"
+            "*Как использовать:**\n\n"
             "🛒 *Купува / Наем* — намиране на обект\n"
             "💰 *Продава / Под наем* — публикуване на обява\n\n"
             "📍 *Местоположение на обекта:*\n"
@@ -473,13 +473,13 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not rows:
-            await query.edit_message_text("Все още нямате обяви.", reply_markup=home_ikb())
+            await query.edit_message_text(t("my_listings_empty", lang), reply_markup=home_ikb(lang=lang))
             return MAIN_MENU
         
         # Сохраняем для пагинации
         ctx.user_data["my_listings"] = rows
         
-        await query.edit_message_text(f"📁 *Вашите обяви* ({len(rows)})", parse_mode="Markdown", reply_markup=home_ikb())
+        await query.edit_message_text(t("my_listings_title", lang, count=len(rows)), parse_mode="Markdown", reply_markup=home_ikb(lang=lang))
         
         # Показываем первую страницу
         await show_my_listings_page(query.message, ctx, page=0)
@@ -499,13 +499,12 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         if not rows:
             await query.edit_message_text(
-                "🔔 Нямате активни абонаменти.\n\n"
-                "Абонаментите позволяват получаване на известия о новых обявиениях.",
-                reply_markup=home_ikb()
+                t("subscriptions_empty", lang),
+                reply_markup=home_ikb(lang=lang)
             )
             return MAIN_MENU
         
-        await query.edit_message_text(f"🔔 Вашите абонаменти ({len(rows)}):", reply_markup=home_ikb())
+        await query.edit_message_text(t("subscriptions_title", lang, count=len(rows)), reply_markup=home_ikb(lang=lang))
         
         for sub_id, stype, act, lat, lon, radius, created, expires, active in rows:
             import datetime
@@ -553,7 +552,7 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"*{ACTION_LABEL[action]}* — изберете тип:",
             parse_mode="Markdown",
-            reply_markup=type_keyboard("stype", include_all=True)
+            reply_markup=type_keyboard("stype", include_all=True, lang=lang)
         )
         return SEARCH_TYPE
     else:
@@ -573,7 +572,7 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if count >= MAX_LISTINGS:
                 await query.edit_message_text(
                     f"⚠️ Достигнали сте лимита от *{MAX_LISTINGS} активни обяви*.\n\n"
-                    f"Изтрийте стари обяви за да добавите нови.",
+                    f"Удалите старые объявления за да добавите нови.",
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton("📁 Моите обяви", callback_data="start_mylistings")],
@@ -613,7 +612,7 @@ async def ad_location_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             "✏️ Въведете *адрес на обекта*:\n\n"
             "Например: _ул. Цар Симеон I 15_ или _бул. Приморски 42_\n\n"
-            "Ботът ще намери това място на картата.",
+            "Бот найдёт это место на картата.",
             parse_mode="Markdown"
         )
         return AD_ADDRESS_TEXT
@@ -821,7 +820,7 @@ async def ad_description(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["ad"]["photos"] = []
     await update.message.reply_text(
         "📸 Изпратете до 5 снимки *наведнъж* (незадължително)\n\n"
-        "Изберете всички снимки в галерията и изпратете с едно съобщение.\n"
+        "Выберите все фотографии в галерията и изпратете с едно съобщение.\n"
         "Или «-» за да пропуснете:",
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
@@ -1189,10 +1188,10 @@ async def ad_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     if query.data == "ad_cancel":
         try:
-            await query.edit_message_text("❌ Обявата е отменена.", reply_markup=home_ikb())
+            await query.edit_message_text("❌ Обявата е отменена.", reply_markup=home_ikb(lang=lang))
         except Exception as e:
             logger.warning(f"Could not edit message, sending new one: {e}")
-            await query.message.reply_text("❌ Обявата е отменена.", reply_markup=home_ikb())
+            await query.message.reply_text("❌ Обявата е отменена.", reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
 
     ad   = ctx.user_data.get("ad", {})
@@ -1220,9 +1219,9 @@ async def ad_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        await query.edit_message_text("✅ Обявата е публикувана!", reply_markup=home_ikb())
+        await query.edit_message_text("✅ Обявата е публикувана!", reply_markup=home_ikb(lang=lang))
     except Exception:
-        await query.message.reply_text("✅ Обявата е публикувана!", reply_markup=home_ikb())
+        await query.message.reply_text("✅ Обявата е публикувана!", reply_markup=home_ikb(lang=lang))
     return MAIN_MENU
 
 # ═══════════════════════════════════════════════════════════════
@@ -1246,7 +1245,7 @@ async def search_location_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(
             "✏️ Въведете *вашия адрес*:\n\n"
             "Например: _ул. Цар Симеон I 15_\n\n"
-            "Ботът ще го намери на картата и ще предложи радиус за търсене.",
+            "Бот найдёт его на карте и ще предложи радиус за търсене.",
             parse_mode="Markdown"
         )
         return SEARCH_ADDRESS_TEXT
@@ -1257,7 +1256,7 @@ async def search_location_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             "• Натиснете бутона «Изпращане на моята геолокация» по-долу\n"
             "• Или чрез кламер 📎 → Геолокация → намерете място на картата → Изпращане"
         )
-        await query.message.reply_text("Изберете начин:", reply_markup=geo_search_keyboard())
+        await query.message.reply_text("Выберите способ:", reply_markup=geo_search_keyboard())
         return SEARCH_GEO
 
 async def search_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1290,7 +1289,7 @@ async def search_geo_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove()  # Убираем кнопку геолокации
     )
     await update.message.reply_text(
-        "Изберете радиус:",
+        "Выберите радиус:",
         reply_markup=radius_keyboard()
     )
     return SEARCH_RADIUS
@@ -1500,7 +1499,7 @@ async def search_page_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def change_radius(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("📏 Изберете радиус:", reply_markup=radius_keyboard())
+    await query.edit_message_text("📏 Выберите радиус:", reply_markup=radius_keyboard())
     return SEARCH_RADIUS
 
 # ── Карта ─────────────────────────────────────────────────────
@@ -1517,7 +1516,7 @@ async def show_map(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_location(latitude=row[0], longitude=row[1])
         await query.message.reply_text(f"📍 {row[2]}")
     else:
-        await query.answer("Геолокацията не е указана", show_alert=True)
+        await query.answer("Геолокация не указана", show_alert=True)
     
     return MAIN_MENU
 
@@ -1531,7 +1530,7 @@ async def reveal_contacts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     # Проверяем не купил ли уже
     if has_purchased_contacts(buyer_id, lid):
-        await query.answer("Вече сте закупили достъп до тези контакти!", show_alert=True)
+        await query.answer("Вы уже купили доступ до тези контакти!", show_alert=True)
         return MAIN_MENU
     
     # Получаем информацию об обявиении
@@ -1639,7 +1638,7 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
     if not params:
         await query.message.reply_text(
             "❌ Параметрите на търсенето са загубени, повторете търсенето.",
-            reply_markup=home_ikb()
+            reply_markup=home_ikb(lang=lang)
         )
         return MAIN_MENU
 
@@ -1654,7 +1653,7 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
     if existing:
         await query.message.reply_text(
             "ℹ️ Вече имате активен абонамент с тези параметри!",
-            reply_markup=home_ikb()
+            reply_markup=home_ikb(lang=lang)
         )
         return MAIN_MENU
 
@@ -1677,9 +1676,9 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
         await query.message.reply_text(
             "✅ *Абонаментът е активиран!* (безплатно за администратор)\n\n"
             "Ще получавате известия за нови обяви, които отговарят на вашите критерии.\n"
-            f"Валиден до: {expires_at[:10]}",
+            f"Действительна до: {expires_at[:10]}",
             parse_mode="Markdown",
-            reply_markup=home_ikb()
+            reply_markup=home_ikb(lang=lang)
         )
         return MAIN_MENU
 
@@ -1700,7 +1699,7 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
             payload=f"subscription_{user_id}_{params['search_type']}_{params['action']}",
             provider_token="",  # Empty for Stars
             currency="XTR",  # Telegram Stars
-            prices=[LabeledPrice(label="Абонамент 30 дни", amount=100)],  # 100 Stars
+            prices=[LabeledPrice(label="Подписка 30 дней", amount=100)],  # 100 Stars
         )
         await query.message.reply_text(
             "💳 *Изпратено е известие за плащане.*\n\n"
@@ -1711,7 +1710,7 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
         logger.error(f"Invoice send error: {e}")
         await query.message.reply_text(
             "❌ Грешка при създаване на плащане. Моля опитайте отново.",
-            reply_markup=home_ikb()
+            reply_markup=home_ikb(lang=lang)
         )
 
     return MAIN_MENU
@@ -1753,7 +1752,7 @@ async def handle_successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TY
         f"• Валиден: 30 дни\n\n"
         f"Ще получавате известия за нови обяви!",
         parse_mode="Markdown",
-        reply_markup=home_ikb()
+        reply_markup=home_ikb(lang=lang)
     )
     
     # Очищаем временные данные
@@ -1821,10 +1820,10 @@ async def contact_send(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ctx.bot.send_message(owner_id,
             f"📩 *Сообщение* по обявиению #{lid}\nОт: {user.full_name} ({uinfo})\n\n{text}",
             parse_mode="Markdown")
-        await update.message.reply_text("✅ Отправлено!", reply_markup=home_ikb())
+        await update.message.reply_text("✅ Отправлено!", reply_markup=home_ikb(lang=lang))
     except Exception as e:
         logger.error(f"Failed to send message to owner {owner_id} for listing {lid}: {e}", exc_info=True)
-        await update.message.reply_text("✅ Запазено.", reply_markup=home_ikb())
+        await update.message.reply_text("✅ Запазено.", reply_markup=home_ikb(lang=lang))
     return MAIN_MENU
 
 # ── Мои обявиения ────────────────────────────────────────────
@@ -1834,9 +1833,9 @@ async def show_my_listings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     rows    = conn.execute("SELECT * FROM listings WHERE owner_id=? ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
     conn.close()
     if not rows:
-        await update.message.reply_text("Все още нямате обяви.", reply_markup=home_ikb())
+        await update.message.reply_text(t("my_listings_empty", lang), reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
-    await update.message.reply_text(f"📁 Вашите обяви ({len(rows)}):", reply_markup=home_ikb())
+    await update.message.reply_text(ft("msg_28557652", lang), reply_markup=home_ikb(lang=lang))
     for row in rows:
         lid, active = row[0], row[12]
         status  = "✅ Активна" if active else "⏸ Неактивна"
@@ -1930,7 +1929,7 @@ async def editfield_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "photo":   "📸 Изпратете нови *снимки* (до 5, или «-» за да премахнете всички):",
     }
     await query.message.reply_text(
-        prompts.get(field, "Въведете нова стойност:"),
+        prompts.get(field, "Введите новое значение:"),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("❌ Отказ", callback_data="go_home")
@@ -1960,7 +1959,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     old_listing = conn.execute("SELECT * FROM listings WHERE id=?", (lid,)).fetchone()
     if not old_listing:
         conn.close()
-        await update.message.reply_text("❌ Обява не е намерена!", reply_markup=home_ikb())
+        await update.message.reply_text("❌ Обява не е намерена!", reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
     
     old_address = old_listing[5]
@@ -1990,7 +1989,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 c.commit(); c.close()
                 await context.job.data["message"].reply_text(
                     f"✅ Снимките са обновени ({len(photos_list)} бр.)!",
-                    reply_markup=home_ikb()
+                    reply_markup=home_ikb(lang=lang)
                 )
                 
                 # Уведомляем подписчиков избранного
@@ -2011,7 +2010,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             conn.execute("UPDATE listings SET photo_id=NULL WHERE id=?", (lid,))
             conn.commit(); conn.close()
             ctx.user_data.pop("editfield_photos" if not is_admin_edit else "adm_editfield_photos", None)
-            await update.message.reply_text("✅ Снимките са премахнати!", reply_markup=home_ikb())
+            await update.message.reply_text("✅ Снимките са премахнати!", reply_markup=home_ikb(lang=lang))
             
             # Уведомляем подписчиков избранного
             await notify_favorites_changes(ctx.bot, lid, "photo", "removed", None)
@@ -2030,7 +2029,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lat, lon, display = result
             conn.execute("UPDATE listings SET address=?, lat=?, lon=? WHERE id=?", (display, lat, lon, lid))
             conn.commit(); conn.close()
-            await update.message.reply_text(f"✅ Адресът е обновен: {display}", reply_markup=home_ikb())
+            await update.message.reply_text(ft("msg_24862390", lang), reply_markup=home_ikb(lang=lang))
             
             # Уведомляем подписчиков избранного
             await notify_favorites_changes(ctx.bot, lid, "address", old_address, display)
@@ -2043,7 +2042,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         val = None if text == "-" else text
         conn.execute("UPDATE listings SET phone=? WHERE id=?", (val, lid))
         conn.commit(); conn.close()
-        await update.message.reply_text("✅ Телефонът е обновен!", reply_markup=home_ikb())
+        await update.message.reply_text("✅ Телефонът е обновен!", reply_markup=home_ikb(lang=lang))
         
         # Уведомляем подписчиков избранного
         await notify_favorites_changes(ctx.bot, lid, "phone", old_phone, val)
@@ -2053,7 +2052,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             price = float(text.replace(",", ".").replace(" ", ""))
             conn.execute("UPDATE listings SET price=? WHERE id=?", (price, lid))
             conn.commit(); conn.close()
-            await update.message.reply_text(f"✅ Цената е обновена: {price:,.0f} €", reply_markup=home_ikb())
+            await update.message.reply_text(ft("msg_16219521", lang), reply_markup=home_ikb(lang=lang))
             
             # Уведомляем подписчиков избранного
             await notify_favorites_changes(ctx.bot, lid, "price", old_price, price)
@@ -2066,7 +2065,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         val = None if text == "-" else text
         conn.execute("UPDATE listings SET description=? WHERE id=?", (val, lid))
         conn.commit(); conn.close()
-        await update.message.reply_text("✅ Описанието е обновено!", reply_markup=home_ikb())
+        await update.message.reply_text("✅ Описанието е обновено!", reply_markup=home_ikb(lang=lang))
         
         # Уведомляем подписчиков избранного
         await notify_favorites_changes(ctx.bot, lid, "description", old_desc, val)
@@ -2107,7 +2106,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.execute("DELETE FROM search_subscriptions WHERE id=?", (sub_id,))
         conn.commit()
         await query.answer("🗑 Абонаментът е изтрит")
-        await query.message.reply_text(f"🗑 Абонамент #{sub_id} удалена.")
+        await query.message.reply_text(ft("msg_87056062", lang))
     
     conn.close()
     await query.edit_message_reply_markup(None)
@@ -2179,7 +2178,7 @@ async def confirm_listing(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(
         f"✅ Обява *#{lid}* е потвърдена! Ще бъде активна още 7 дни.",
         parse_mode="Markdown",
-        reply_markup=home_ikb()
+        reply_markup=home_ikb(lang=lang)
     )
     return MAIN_MENU
 
@@ -2196,7 +2195,7 @@ async def show_map(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.execute("UPDATE listings SET views = COALESCE(views, 0) + 1 WHERE id=?", (lid,))
 
     if not row or not row[0]:
-        await query.answer("Геолокацията не е налична", show_alert=True)
+        await query.answer("Геолокация недоступна", show_alert=True)
         return MAIN_MENU
 
     lat, lon, address = row
@@ -2223,7 +2222,7 @@ async def fix_addresses_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 fixed += 1
     conn.commit()
     conn.close()
-    await update.message.reply_text(f"✅ Готово! Обновлено обявиений: {fixed}")
+    await update.message.reply_text(ft("msg_51256208", lang))
     return MAIN_MENU
 
 async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -2310,7 +2309,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = "👥 *Пользователи:*\n\n"
         for uid, name, cnt in rows:
             text += f"• {name or '—'} · `{uid}` · {cnt} обяви\n"
-        await query.edit_message_text(text or "Нет пользователей.", parse_mode="Markdown",
+        await query.edit_message_text(text or t("msg_55100489", lang), parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ В меню", callback_data="adm_menu")]]))
         return ADMIN_MENU
 
@@ -2481,7 +2480,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "photo":   "📸 Изпратете нови *снимки* (до 5, или «-» за да премахнете всички):",
         }
         await query.message.reply_text(
-            prompts.get(field, "Въведете нова стойност:"),
+            prompts.get(field, "Введите новое значение:"),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("❌ Отказ", callback_data="go_home")
@@ -2540,13 +2539,13 @@ async def cmd_my(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not rows:
-        await update.message.reply_text("Все още нямате обяви.", reply_markup=home_ikb())
+        await update.message.reply_text(t("my_listings_empty", lang), reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
 
     # Сохраняем в user_data для пагинации
     ctx.user_data["my_listings"] = rows
     
-    await update.message.reply_text(f"📁 *Вашите обяви* ({len(rows)})", parse_mode="Markdown")
+    await update.message.reply_text(t("my_listings_title", lang, count=len(rows)), parse_mode="Markdown")
     
     # Показываем первую страницу
     await show_my_listings_page(update.message, ctx, page=0)
@@ -2640,10 +2639,10 @@ async def cmd_subscriptions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not rows:
-        await update.message.reply_text("🔔 Нямате абонаменти.", reply_markup=home_ikb())
+        await update.message.reply_text("🔔 Нямате абонаменти.", reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
 
-    await update.message.reply_text(f"🔔 *Вашите абонаменти* ({len(rows)})", parse_mode="Markdown")
+    await update.message.reply_text(ft("msg_23108270", lang), parse_mode="Markdown")
     import datetime
     for sub_id, stype, act, radius, created, expires, active in rows:
         radius_text = f"{radius//1000} км" if radius >= 1000 else f"{radius} м"
@@ -2684,20 +2683,20 @@ async def cmd_subscriptions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Команда /help — помощ."""
     text = (
-        "*ParkPlace Varna — паркоместа и гаражи*\n\n"
+        "*ParkPlace Varna — парковки и гаражи**\n\n"
         "🛒 *Купува / Наем* — търсене на обект\n"
         "💰 *Продава / Под наем* — публикуване на обява\n"
         "⭐ *Любими* — запазени обяви\n"
         "🔔 *Абонаменти* — известия за нови обяви (⭐100 ≈ 2€)\n\n"
         "*Команди:*\n"
         "/start — Главно меню\n"
-        "/my — Моите обяви\n"
-        "/favorites — Любими\n"
-        "/subscriptions — Абонаменти\n"
-        "/help — Помощ\n\n"
+        "/my — Мои объявления\n"
+        "/favorites — Избранное\n"
+        "/subscriptions — Подписки\n"
+        "/help — Помощь\n\n"
         "_Обявите се изтриват автоматично ако не са потвърдени в рамките на 7 дни_"
     )
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=home_ikb())
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=home_ikb(lang=lang))
     return MAIN_MENU
 
 
@@ -2725,9 +2724,9 @@ async def show_favorites(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not favorites:
         text = "⭐ Все още нямате любими обяви.\n\nДобавяйте обяви в любими, за да не ги загубите!"
         if query:
-            await query.edit_message_text(text, reply_markup=home_ikb())
+            await query.edit_message_text(text, reply_markup=home_ikb(lang=lang))
         else:
-            await update.message.reply_text(text, reply_markup=home_ikb())
+            await update.message.reply_text(text, reply_markup=home_ikb(lang=lang))
         return MAIN_MENU
 
     # Сохраняем для пагинации
@@ -2831,7 +2830,7 @@ async def toggle_favorite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             conn.commit()
             await query.answer("⭐ Добавено в любими!", show_alert=True)
         except Exception:
-            await query.answer("Вече в любими", show_alert=True)
+            await query.answer("Уже в избранном", show_alert=True)
     else:
         conn.execute("DELETE FROM favorites WHERE user_id=? AND listing_id=?", (user_id, lid))
         conn.commit()
@@ -3113,7 +3112,7 @@ def main():
                     await context.bot.send_message(
                         owner_id,
                         f"⏰ *Обява #{lid}* е публикувана преди повече от 7 дни.\n\n"
-                        f"Все още ли е актуална? Потвърдете в рамките на 48 часа, иначе ще бъде изтрита автоматично.",
+                        f"Ещё актуально? Потвърдете в рамките на 48 часа, иначе ще бъде изтрита автоматично.",
                         parse_mode="Markdown",
                         reply_markup=InlineKeyboardMarkup([
                             [InlineKeyboardButton("✅ Да, актуална е", callback_data=f"confirm_listing_{lid}")],
