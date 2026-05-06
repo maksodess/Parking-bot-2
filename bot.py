@@ -98,14 +98,14 @@ def init_db():
             active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')), expires_at TEXT
         );
         CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+            listing_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(user_id, listing_id)
+        );
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             language TEXT DEFAULT 'bg',
             created_at TEXT DEFAULT (datetime('now'))
-        );
-            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
-            listing_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')),
-            UNIQUE(user_id, listing_id)
         );
     """)
     
