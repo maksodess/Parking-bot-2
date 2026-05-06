@@ -413,38 +413,23 @@ async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ── Текстовое меню ────────────────────────────────────────────
 async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    from telegram import ReplyKeyboardRemove
+    user_id = update.effective_user.id
     text = update.message.text
+    
     if text == "🏠 Начало":
         saved_lang = ctx.user_data.get("lang")
         ctx.user_data.clear()
         if saved_lang:
             ctx.user_data["lang"] = saved_lang
-        await update.message.reply_text(
-            "🚗 *ParkPlace Varna*\nКакво искате да направите?",
-            parse_mode="Markdown", 
-            reply_markup=action_keyboard()
-        )
+        lang = get_user_lang(user_id, ctx)
+        ctx.user_data["lang"] = lang
+        await update.message.reply_text(t("welcome", lang), parse_mode="Markdown", reply_markup=action_keyboard(lang))
         return MAIN_MENU
-    elif text == "📁 Моите обяви":
-        return await show_my_listings(update, ctx)
-    elif text == "ℹ️ Помощ":
-        await update.message.reply_text(
-            "*Как использовать:**\n\n"
-            "🛒 *Купува / Наем* — намиране на обект\n"
-            "💰 *Продава / Под наем* — публикуване на обява\n\n"
-            "📍 *Местоположение на обекта:*\n"
-            "Можете да въведете адрес като текст — ботът ще го намери на картата.\n"
-            "Или изпратете геолокация чрез 📎 → Геолокация.\n\n"
-            "🔍 *Търсене по радиус* — посочете вашето местоположение\n"
-            "и изберете радиус: 500м / 1км / 2км / 5км / Цяла Варна.",
-            parse_mode="Markdown", reply_markup=main_keyboard()
-        )
-        return MAIN_MENU
-    await update.message.reply_text("Какво искате да направите?", reply_markup=action_keyboard())
+    
+    lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
+    await update.message.reply_text(t("choose_action", lang), reply_markup=action_keyboard(lang))
     return MAIN_MENU
-
-# ── Выбор действия ────────────────────────────────────────────
 
 async def home_button_pressed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Обработка Reply-кнопки 'На главную' из любого состояния."""
