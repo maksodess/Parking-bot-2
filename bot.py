@@ -513,10 +513,25 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     action = query.data.replace("start_", "")
+    
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
 
     # Смяна на език
     if action == "language":
         return await cmd_language(update, ctx)
+    
+    # Кнопки buy, sell, rent, lease - переход к созданию/поиску
+    if action in ["buy", "sell", "rent", "lease"]:
+        ctx.user_data["action"] = action
+        
+        # Sell и Lease - создание объявления
+        if action in ["sell", "lease"]:
+            return await ad_type_choice(update, ctx)
+        
+        # Buy и Rent - поиск объявлений
+        if action in ["buy", "rent"]:
+            return await search_start(update, ctx)
 
     # Любими
     if action == "favorites":
@@ -568,8 +583,8 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             import datetime
             
             radius_text = f"{radius//1000} км" if radius >= 1000 else f"{radius} м"
-            type_text = TYPE_LABEL.get(stype, stype)
-            action_text = ACTION_LABEL.get(act, act)
+            type_text = get_type_label(stype, lang)
+            action_text = get_action_label(act, lang)
             status = "✅ Активна" if active else "⏸ Изключен"
             
             # Проверяем не истекла ли подписка
@@ -603,60 +618,67 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         return MAIN_MENU
 
-    ctx.user_data["action"] = action
-
-    if action in ("buy", "rent"):
-        ctx.user_data["search_action"] = action
-        await query.edit_message_text(
-            f"*{ACTION_LABEL[action]}* — изберете тип:",
-            parse_mode="Markdown",
-            reply_markup=type_keyboard("stype", include_all=True)
-        )
-        return SEARCH_TYPE
-    else:
-        # Проверяем лимит объявлений (админ - безлимит)
-        user_id = query.from_user.id
-        
-        # Админ может создавать сколько угодно
-        if user_id != ADMIN_ID:
-            MAX_LISTINGS = 15
-            conn = db()
-            count = conn.execute(
-                "SELECT COUNT(*) FROM listings WHERE owner_id=? AND active=1", 
-                (user_id,)
-            ).fetchone()[0]
-            conn.close()
-            
-            if count >= MAX_LISTINGS:
-                await query.edit_message_text(
-                    f"⚠️ Достигнали сте лимита от *{MAX_LISTINGS} активни обяви*.\n\n"
-                    f"Изтрийте стари обяви за да добавите нови.",
-                    parse_mode="Markdown",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📁 Моите обяви", callback_data="start_mylistings")],
-                        [InlineKeyboardButton("🏠 Начало",      callback_data="go_home")],
-                    ])
-                )
-                return MAIN_MENU
-
-        ctx.user_data["ad"] = {"action": action}
-        ctx.user_data["published"] = False
-        await query.edit_message_text(
-            f"*{ACTION_LABEL[action]}* — изберете тип:",
-            parse_mode="Markdown",
-            reply_markup=type_keyboard("adtype", include_all=False)
-        )
-        return AD_TYPE
-
 # ═══════════════════════════════════════════════════════════════
 # ПОДАЧА ОБЪЯВЛЕНИЯ
 # ═══════════════════════════════════════════════════════════════
+async def ad_type_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Выбор типа объявления (sell/lease) - показ клавиатуры."""
+    query = update.callback_query
+    if query:
+        await query.answer()
+        user_id = query.from_user.id
+    else:
+        user_id = update.effective_user.id
+    
+    lang = get_user_lang(user_id, ctx)
+    action = ctx.user_data.get("action", "sell")
+    
+    # Проверяем лимит объявлений (админ - безлимит)
+    if user_id != ADMIN_ID:
+        MAX_LISTINGS = 15
+        conn = db()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM listings WHERE owner_id=? AND active=1", 
+            (user_id,)
+        ).fetchone()[0]
+        conn.close()
+        
+        if count >= MAX_LISTINGS:
+            msg = t("ad_limit_reached", lang, max=MAX_LISTINGS)
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(t("btn_my_listings", lang), callback_data="start_mylistings")],
+                [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
+            ])
+            
+            if query:
+                await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=keyboard)
+            else:
+                await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=keyboard)
+            return MAIN_MENU
+
+    ctx.user_data["ad"] = {"action": action}
+    ctx.user_data["published"] = False
+    
+    msg = t("ad_type_question", lang, action=get_action_label(action, lang))
+    keyboard = type_keyboard("adtype", include_all=False, lang=lang)
+    
+    if query:
+        await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=keyboard)
+    else:
+        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=keyboard)
+    
+    return AD_TYPE
+
 async def ad_type_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Пользователь выбрал тип (parking/garage)."""
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     query = update.callback_query
     await query.answer()
     ctx.user_data["ad"]["type"] = query.data.replace("adtype_", "")
     await query.edit_message_text(
-        "📍 Как да посочите местоположението на обекта?",
+        t("ad_location_choice", lang),
         reply_markup=location_choice_keyboard("adloc", lang=lang)
     )
     return AD_LOCATION_CHOICE
@@ -1288,6 +1310,33 @@ async def ad_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ═══════════════════════════════════════════════════════════════
 # ПОИСК
 # ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# ПОИСК
+# ═══════════════════════════════════════════════════════════════
+async def search_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Начало поиска - показ клавиатуры выбора типа."""
+    query = update.callback_query
+    if query:
+        await query.answer()
+        user_id = query.from_user.id
+    else:
+        user_id = update.effective_user.id
+    
+    lang = get_user_lang(user_id, ctx)
+    action = ctx.user_data.get("action", "buy")
+    
+    ctx.user_data["search_action"] = action
+    
+    msg = t("search_type_question", lang)
+    keyboard = type_keyboard("stype", include_all=True, lang=lang)
+    
+    if query:
+        await query.edit_message_text(msg, parse_mode="Markdown", reply_markup=keyboard)
+    else:
+        await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=keyboard)
+    
+    return SEARCH_TYPE
+
 async def search_type_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
@@ -1610,7 +1659,7 @@ async def reveal_contacts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return MAIN_MENU
     
     ltype, address = row
-    type_label = TYPE_LABEL.get(ltype, ltype)
+    type_label = get_type_label(ltype, lang)
     
     # Формируем инвойс для Telegram Stars
     title = f"Доступ к контактам"
@@ -1753,8 +1802,8 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
     ctx.user_data["pending_subscription"] = params
 
     radius_text = f"{params['radius']//1000} км" if params['radius'] >= 1000 else f"{params['radius']} м"
-    type_text   = TYPE_LABEL.get(params["search_type"], params["search_type"])
-    action_text = ACTION_LABEL.get(params["action"], params["action"])
+    type_text   = get_type_label(params["search_type"], lang)
+    action_text = get_action_label(params["action"], lang)
 
     # Отправляем инвойс Telegram Stars
     from telegram import LabeledPrice
@@ -1808,8 +1857,8 @@ async def handle_successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TY
         )
 
     radius_text = f"{params['radius']//1000} км" if params['radius'] >= 1000 else f"{params['radius']} м"
-    type_text   = TYPE_LABEL.get(params["search_type"], params["search_type"])
-    action_text = ACTION_LABEL.get(params["action"], params["action"])
+    type_text   = get_type_label(params["search_type"], lang)
+    action_text = get_action_label(params["action"], lang)
 
     await update.message.reply_text(
         f"✅ *Плащането е успешно!*\n\n"
@@ -2719,8 +2768,8 @@ async def cmd_subscriptions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     import datetime
     for sub_id, stype, act, radius, created, expires, active in rows:
         radius_text = f"{radius//1000} км" if radius >= 1000 else f"{radius} м"
-        type_text   = TYPE_LABEL.get(stype, stype)
-        action_text = ACTION_LABEL.get(act, act)
+        type_text   = get_type_label(stype, lang)
+        action_text = get_action_label(act, lang)
         status = "✅ Активен" if active else "⏸ Изключен"
         if expires:
             try:
