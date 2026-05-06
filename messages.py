@@ -538,3 +538,7 @@ LANG["ru"].update({
     "edit_phone_prompt": "📞 Введите новый *телефон* (или «-» чтобы удалить):",
     "edit_value_prompt": "Введите новое значение:",
 })
+
+# Дополнительные переводы
+LANG["bg"]["subscriptions_title"] = "🔔 Вашите абонаменти ({count}):"
+LANG["ru"]["subscriptions_title"] = "🔔 Ваши подписки ({count}):"
