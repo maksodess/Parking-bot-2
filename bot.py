@@ -23,6 +23,8 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, ContextTypes, filters
 )
 
+from messages import t, get_user_lang, set_user_lang, detect_telegram_lang
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
 ADMIN_ID   = 5053888378
 
@@ -204,17 +206,13 @@ def fmt_dist(m):
 # ── Лейблы ────────────────────────────────────────────────────
 # Функции локализации
 def get_action_label(action, lang='bg'):
-    labels = {
-        'bg': {'buy': '🛒 Купува', 'sell': '💰 Продава', 'rent': '🔑 Наем', 'lease': '📋 Под наем'},
-        'ru': {'buy': '🛒 Купить', 'sell': '💰 Продать', 'rent': '🔑 Аренда', 'lease': '📋 Сдать'}
-    }
+    labels = {'bg': {'buy': '🛒 Купува', 'sell': '💰 Продава', 'rent': '🔑 Наем', 'lease': '📋 Под наем'},
+              'ru': {'buy': '🛒 Купить', 'sell': '💰 Продать', 'rent': '🔑 Аренда', 'lease': '📋 Сдать'}}
     return labels.get(lang, labels['bg']).get(action, action)
 
 def get_type_label(ltype, lang='bg'):
-    labels = {
-        'bg': {'parking': '🅿️ Паркомясто', 'garage': '🚘 Гараж', 'all': '📋 Всичко'},
-        'ru': {'parking': '🅿️ Парковочное место', 'garage': '🚘 Гараж', 'all': '📋 Всё'}
-    }
+    labels = {'bg': {'parking': '🅿️ Паркомясто', 'garage': '🚘 Гараж', 'all': '📋 Всичко'},
+              'ru': {'parking': '🅿️ Парковочное место', 'garage': '🚘 Гараж', 'all': '📋 Всё'}}
     return labels.get(lang, labels['bg']).get(ltype, ltype)
 
 ACTION_LABEL = {
@@ -311,13 +309,13 @@ def back_and_home_ikb(back_action="go_home"):
 
 def action_keyboard(lang="bg"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(t("btn_buy", lang),         callback_data="start_buy"),
-         InlineKeyboardButton(t("btn_sell", lang),        callback_data="start_sell")],
-        [InlineKeyboardButton(t("btn_rent", lang),           callback_data="start_rent"),
-         InlineKeyboardButton(t("btn_lease", lang),       callback_data="start_lease")],
-        [InlineKeyboardButton(t("btn_my_listings", lang), callback_data="start_mylistings"),
-         InlineKeyboardButton(t("btn_favorites", lang),       callback_data="start_favorites")],
-        [InlineKeyboardButton(t("btn_subscriptions", lang),   callback_data="start_subscriptions")],
+        [InlineKeyboardButton("🛒 Купува",         callback_data="start_buy"),
+         InlineKeyboardButton("💰 Продава",        callback_data="start_sell")],
+        [InlineKeyboardButton("🔑 Наем",           callback_data="start_rent"),
+         InlineKeyboardButton("📋 Под наем",       callback_data="start_lease")],
+        [InlineKeyboardButton("📁 Моите обяви", callback_data="start_mylistings"),
+         InlineKeyboardButton("⭐ Любими",       callback_data="start_favorites")],
+        [InlineKeyboardButton("🔔 Абонаменти",   callback_data="start_subscriptions")],
     ])
 
 def type_keyboard(prefix, include_all=False):
@@ -375,6 +373,49 @@ def admin_keyboard():
     ])
 
 # ── /start ────────────────────────────────────────────────────
+async def cmd_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Команда /language."""
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
+    
+    keyboard = [
+        [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
+        [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="home")]
+    ]
+    await update.message.reply_text(t("language_choose", lang), reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def cmd_language_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Кнопка выбора языка."""
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
+    
+    keyboard = [
+        [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
+        [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="home")]
+    ]
+    await query.edit_message_text(t("language_choose", lang), reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def set_language_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Обработка выбора языка."""
+    query = update.callback_query
+    await query.answer()
+    user_id = update.effective_user.id
+    new_lang = query.data.replace("lang_", "")
+    set_user_lang(user_id, new_lang, ctx)
+    ctx.user_data["lang"] = new_lang
+    
+    await query.edit_message_text(
+        t("language_changed", new_lang) + "\n\n" + t("welcome_line", new_lang),
+        parse_mode="Markdown",
+        reply_markup=action_keyboard(new_lang)
+    )
+
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
     ctx.user_data.clear()
@@ -396,42 +437,6 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=action_keyboard()
         )
     return MAIN_MENU
-
-async def cmd_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Показать выбор языка."""
-    user_id = update.effective_user.id
-    lang = get_user_lang(user_id, ctx)
-    ctx.user_data["lang"] = lang
-    
-    keyboard = [
-        [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
-        [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
-        [InlineKeyboardButton(t("btn_home", lang), callback_data="home")]
-    ]
-    
-    await update.message.reply_text(
-        t("language_choose", lang),
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-async def set_language_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Обработка выбора языка."""
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = update.effective_user.id
-    new_lang = query.data.replace("lang_", "")
-    
-    # Сохраняем язык
-    set_user_lang(user_id, new_lang, ctx)
-    ctx.user_data["lang"] = new_lang
-    
-    # Показываем главное меню на новом языке
-    await query.edit_message_text(
-        t("language_changed", new_lang) + "\n\n" + t("welcome_line", new_lang),
-        parse_mode="Markdown",
-        reply_markup=action_keyboard(new_lang)
-    )
 
 async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -630,8 +635,6 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=type_keyboard("adtype", include_all=False)
         )
         return AD_TYPE
-
-from messages import t, get_user_lang, set_user_lang, detect_telegram_lang
 
 # ═══════════════════════════════════════════════════════════════
 # ПОДАЧА ОБЪЯВЛЕНИЯ
@@ -1763,16 +1766,6 @@ async def handle_successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TY
     """Обработка успешной оплаты Stars."""
     payment = update.message.successful_payment
     user_id = update.effective_user.id
-    
-    # Определение и сохранение языка
-    lang = get_user_lang(user_id, ctx)
-    if not lang or lang == "bg":
-        detected = detect_telegram_lang(update)
-        if detected != lang:
-            set_user_lang(user_id, detected, ctx)
-            lang = detected
-    ctx.user_data["lang"] = lang
-    
     
     logger.info(f"Payment successful: {payment.telegram_payment_charge_id} from user {user_id}")
     
@@ -3070,7 +3063,7 @@ def main():
     )
 
     app.add_handler(conv)
-
+    app.add_handler(CallbackQueryHandler(cmd_language_button, pattern="^language$"))
     app.add_handler(CommandHandler("language", cmd_language))
     app.add_handler(CallbackQueryHandler(set_language_callback, pattern="^lang_"))
     
