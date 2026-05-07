@@ -308,6 +308,7 @@ def back_and_home_ikb(back_action="go_home"):
     ])
 
 def action_keyboard(lang="bg"):
+    [InlineKeyboardButton(t("btn_language", lang), callback_data="language")],
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Купува",         callback_data="start_buy"),
          InlineKeyboardButton("💰 Продава",        callback_data="start_sell")],
@@ -422,40 +423,50 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     if update.message:
         await update.message.reply_text(
-            "🚗 *Добре дошли в ParkPlace Varna!*\n\n"
+            t("welcome_full", lang),
             "Пазар за паркоместа и гаражи във Варна.\n\n"
             "Изберете действие от менюто:",
             parse_mode="Markdown", 
-            reply_markup=action_keyboard()
+            reply_markup=action_keyboard(lang)
         )
     else:
         await update.callback_query.message.reply_text(
-            "🚗 *Добре дошли в ParkPlace Varna!*\n\n"
+            t("welcome_full", lang),
             "Пазар за паркоместа и гаражи във Варна.\n\n"
             "Изберете действие от менюто:",
             parse_mode="Markdown",
-            reply_markup=action_keyboard()
+            reply_markup=action_keyboard(lang)
         )
     return MAIN_MENU
 
 async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = update.effective_user.id
+    
+    # КРИТИЧНО: Сохранить язык перед очисткой
+    saved_lang = ctx.user_data.get("lang")
     ctx.user_data.clear()
+    if saved_lang:
+        ctx.user_data["lang"] = saved_lang
+    
+    # Получить и кэшировать язык
+    lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
     
     # Редактируем существующее сообщение
     try:
         await query.edit_message_text(
-            "🚗 *ParkPlace Varna*\n\nКакво искате да направите?",
+            t("welcome_line", lang),
             parse_mode="Markdown",
-            reply_markup=action_keyboard()
+            reply_markup=action_keyboard(lang)
         )
     except Exception:
         # Если не можем отредактировать (например, медиагруппа), отправляем новое
         await query.message.reply_text(
-            "🚗 *ParkPlace Varna*\n\nКакво искате да направите?",
+            t("welcome_line", lang),
             parse_mode="Markdown",
-            reply_markup=action_keyboard()
+            reply_markup=action_keyboard(lang)
         )
     
     return MAIN_MENU
@@ -1766,6 +1777,16 @@ async def handle_successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TY
     """Обработка успешной оплаты Stars."""
     payment = update.message.successful_payment
     user_id = update.effective_user.id
+    
+    # Определение и сохранение языка
+    lang = get_user_lang(user_id, ctx)
+    if not lang or lang == "bg":
+        detected = detect_telegram_lang(update)
+        if detected != lang:
+            set_user_lang(user_id, detected, ctx)
+            lang = detected
+    ctx.user_data["lang"] = lang
+
     
     logger.info(f"Payment successful: {payment.telegram_payment_charge_id} from user {user_id}")
     
