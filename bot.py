@@ -1463,7 +1463,14 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     total = len(results) + len(no_geo)
 
     if total == 0:
-        rl = f"{radius//1000} км" if radius and radius >= 1000 else f"{radius} м" if radius else "вся Варна"
+        user_id = query.from_user.id
+        lang = get_user_lang(user_id, ctx)
+        
+        km_text = {"bg": "км", "ru": "км"}
+        m_text = {"bg": "м", "ru": "м"}
+        all_varna = {"bg": "вся Варна", "ru": "вся Варна"}
+        
+        rl = f"{radius//1000} {km_text[lang]}" if radius and radius >= 1000 else f"{radius} {m_text[lang]}" if radius else all_varna[lang]
         
         # Сохраняем параметры поиска для подписки
         ctx.user_data["subscribe_params"] = {
@@ -1475,8 +1482,7 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         }
         
         await query.edit_message_text(
-            f"😕 В радиус {rl} няма намерени обяви.\n\n"
-            f"💡 Искате ли да получавате известия когато се появи подходяща обява?",
+            t("search_no_results", lang, radius=rl),
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔔 Абонамент за известия (⭐100 ≈ 2€)", callback_data="subscribe")],
                 [InlineKeyboardButton("🔄 Промяна на радиус", callback_data="change_radius")],
@@ -1755,12 +1761,13 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
     await query.answer()
 
     user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
     params = ctx.user_data.get("subscribe_params")
 
     if not params:
         await query.message.reply_text(
-            "❌ Параметрите на търсенето са загубени, повторете търсенето.",
-            reply_markup=home_ikb()
+            t("search_params_lost", lang),
+            reply_markup=home_ikb(lang)
         )
         return MAIN_MENU
 
@@ -1774,8 +1781,8 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
 
     if existing:
         await query.message.reply_text(
-            "ℹ️ Вече имате активен абонамент с тези параметри!",
-            reply_markup=home_ikb()
+            t("subscription_exists", lang),
+            reply_markup=home_ikb(lang)
         )
         return MAIN_MENU
 
@@ -1796,32 +1803,32 @@ async def subscribe_to_notifications(update: Update, ctx: ContextTypes.DEFAULT_T
         conn.close()
         
         await query.message.reply_text(
-            "✅ *Абонаментът е активиран!* (безплатно за администратор)\n\n"
-            "Ще получавате известия за нови обяви, които отговарят на вашите критерии.\n"
-            f"Валиден до: {expires_at[:10]}",
+            t("subscription_activated_admin", lang, expires=expires_at[:10]),
             parse_mode="Markdown",
-            reply_markup=home_ikb()
+            reply_markup=home_ikb(lang)
         )
         return MAIN_MENU
 
     # Сохраняем параметры для оплаты
     ctx.user_data["pending_subscription"] = params
 
-    radius_text = f"{params['radius']//1000} км" if params['radius'] >= 1000 else f"{params['radius']} м"
-    type_text   = TYPE_LABEL.get(params["search_type"], params["search_type"])
-    action_text = ACTION_LABEL.get(params["action"], params["action"])
+    km_text = {"bg": "км", "ru": "км"}
+    m_text = {"bg": "м", "ru": "м"}
+    radius_text = f"{params['radius']//1000} {km_text[lang]}" if params['radius'] >= 1000 else f"{params['radius']} {m_text[lang]}"
+    type_text   = get_type_label(params["search_type"], lang)
+    action_text = get_action_label(params["action"], lang)
 
     # Отправляем инвойс Telegram Stars
     from telegram import LabeledPrice
     try:
         await ctx.bot.send_invoice(
             chat_id=user_id,
-            title="🔔 Абонамент за известия",
-            description=f"{action_text} · {type_text}\nРадиус: {radius_text}\nВалиден: 30 дни",
+            title=t("subscription_invoice_title", lang),
+            description=t("subscription_invoice_desc", lang, action=action_text, type=type_text, radius=radius_text),
             payload=f"subscription_{user_id}_{params['search_type']}_{params['action']}",
             provider_token="",  # Empty for Stars
             currency="XTR",  # Telegram Stars
-            prices=[LabeledPrice(label="Абонамент 30 дни", amount=100)],  # 100 Stars
+            prices=[LabeledPrice(label=t("subscription_invoice_label", lang), amount=100)],  # 100 Stars
         )
         await query.message.reply_text(
             "💳 *Изпратено е известие за плащане.*\n\n"
@@ -2790,6 +2797,8 @@ async def cmd_favorites(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_subscriptions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Команда /subscriptions — абонаменти."""
     user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     conn = db()
     rows = conn.execute(
         "SELECT id, search_type, action, radius, created_at, expires_at, active "
@@ -2799,40 +2808,49 @@ async def cmd_subscriptions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not rows:
-        await update.message.reply_text("🔔 Нямате абонаменти.", reply_markup=home_ikb())
+        await update.message.reply_text(t("sub_no_listings", lang), reply_markup=home_ikb(lang))
         return MAIN_MENU
 
-    await update.message.reply_text(f"🔔 *Вашите абонаменти* ({len(rows)})", parse_mode="Markdown")
+    sub_header = {"bg": f"🔔 *Вашите абонаменти* ({len(rows)})", "ru": f"🔔 *Ваши подписки* ({len(rows)})"}
+    await update.message.reply_text(sub_header[lang], parse_mode="Markdown")
+    
     import datetime
     for sub_id, stype, act, radius, created, expires, active in rows:
-        radius_text = f"{radius//1000} км" if radius >= 1000 else f"{radius} м"
-        type_text   = TYPE_LABEL.get(stype, stype)
-        action_text = ACTION_LABEL.get(act, act)
-        status = "✅ Активен" if active else "⏸ Изключен"
+        km_text = {"bg": "км", "ru": "км"}
+        m_text = {"bg": "м", "ru": "м"}
+        radius_text = f"{radius//1000} {km_text[lang]}" if radius >= 1000 else f"{radius} {m_text[lang]}"
+        type_text   = get_type_label(stype, lang)
+        action_text = get_action_label(act, lang)
+        
+        status_active = {"bg": "✅ Активен", "ru": "✅ Активна"}
+        status_paused = {"bg": "⏸ Изключен", "ru": "⏸ Приостановлена"}
+        status_expired = {"bg": "⏰ Изтекъл", "ru": "⏰ Истекла"}
+        
+        status = status_active[lang] if active else status_paused[lang]
         if expires:
             try:
                 exp = datetime.datetime.strptime(expires, "%Y-%m-%d %H:%M:%S")
                 if exp < datetime.datetime.now():
-                    status = "⏰ Изтекъл"
+                    status = status_expired[lang]
             except Exception:
                 pass
 
-        text = (
-            f"🔔 *Абонамент #{sub_id}*\n"
-            f"• {action_text} · {type_text}\n"
-            f"• Радиус: {radius_text}\n"
-            f"📅 {created[:10]} → {expires[:10] if expires else '—'}\n"
-            f"{status}"
-        )
+        sub_text_template = {
+            "bg": f"🔔 *Абонамент #{sub_id}*\n• {action_text} · {type_text}\n• Радиус: {radius_text}\n📅 {created[:10]} → {expires[:10] if expires else '—'}\n{status}",
+            "ru": f"🔔 *Подписка #{sub_id}*\n• {action_text} · {type_text}\n• Радиус: {radius_text}\n📅 {created[:10]} → {expires[:10] if expires else '—'}\n{status}"
+        }
+        
+        text = sub_text_template[lang]
+        
         btns = [
-            [InlineKeyboardButton("✏️ Редактиране", callback_data=f"editsub_{sub_id}")],
+            [InlineKeyboardButton(t("btn_edit", lang), callback_data=f"editsub_{sub_id}")],
         ]
         if active:
-            btns.append([InlineKeyboardButton("⏸ Изключване", callback_data=f"unsub_{sub_id}"),
-                         InlineKeyboardButton("🗑 Изтрий", callback_data=f"delsub_{sub_id}")])
+            btns.append([InlineKeyboardButton(t("btn_pause", lang), callback_data=f"unsub_{sub_id}"),
+                         InlineKeyboardButton(t("btn_delete", lang), callback_data=f"delsub_{sub_id}")])
         else:
-            btns.append([InlineKeyboardButton("▶️ Включване", callback_data=f"resub_{sub_id}"),
-                         InlineKeyboardButton("🗑 Изтрий", callback_data=f"delsub_{sub_id}")])
+            btns.append([InlineKeyboardButton(t("btn_resume", lang), callback_data=f"resub_{sub_id}"),
+                         InlineKeyboardButton(t("btn_delete", lang), callback_data=f"delsub_{sub_id}")])
         
         await update.message.reply_text(
             text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(btns)
