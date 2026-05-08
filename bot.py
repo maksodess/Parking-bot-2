@@ -1106,28 +1106,47 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
     if not listing or not favorites_users:
         return
     
-    # Формируем сообщение об изменении (на болгарском!)
-    messages = {
-        "price": f"💰 *Цената е променена*\nБеше: {old_value:,.0f} €\nСега: {new_value:,.0f} €",
-        "address": f"📍 *Адресът е променен*\nБеше: {old_value or '—'}\nСега: {new_value or '—'}",
-        "phone": f"📞 *Телефонът е променен*\n{'Добавен' if old_value is None else 'Променен' if new_value else 'Премахнат'}",
-        "description": f"📝 *Описанието е променено*\n{'Добавено' if old_value is None else 'Променено' if new_value else 'Премахнато'}",
-        "photo": f"📸 *Снимките са обновени*\n{f'{new_value} снимки' if new_value != 'removed' else 'Снимките са премахнати'}",
-    }
-    
-    notification_text = messages.get(field, f"✏️ Обявата #{listing_id} е обновена")
-    
     # Отправляем уведомления с полным объявлением
     photos = get_photos(listing)
-    caption = listing_text(listing)
     
     for (user_id,) in favorites_users:
         try:
-            full_message = f"⭐ *Обявата от вашите любими е обновена!*\n\n{notification_text}\n\n{'─'*30}\n\n{caption}"
+            # Получаем язык каждого пользователя
+            lang = get_user_lang(user_id)
+            
+            # Формируем сообщение об изменении на языке пользователя
+            if field == "price":
+                notification_text = t("notify_price_changed", lang, old=f"{old_value:,.0f}", new=f"{new_value:,.0f}")
+            elif field == "address":
+                notification_text = t("notify_address_changed", lang, old=old_value or '—', new=new_value or '—')
+            elif field == "phone":
+                if old_value is None:
+                    notification_text = t("notify_phone_added", lang)
+                elif new_value:
+                    notification_text = t("notify_phone_changed", lang)
+                else:
+                    notification_text = t("notify_phone_removed", lang)
+            elif field == "description":
+                if old_value is None:
+                    notification_text = t("notify_desc_added", lang)
+                elif new_value:
+                    notification_text = t("notify_desc_changed", lang)
+                else:
+                    notification_text = t("notify_desc_removed", lang)
+            elif field == "photo":
+                if new_value != 'removed':
+                    notification_text = t("notify_photos_updated", lang, count=new_value)
+                else:
+                    notification_text = t("notify_photos_removed", lang)
+            else:
+                notification_text = t("notify_listing_updated", lang, lid=listing_id)
+            
+            caption = listing_text(listing, lang=lang)
+            full_message = f"{t('notify_fav_updated', lang)}\n\n{notification_text}\n\n{'─'*30}\n\n{caption}"
             
             buttons = [
-                [InlineKeyboardButton("💔 Премахни от любими", callback_data=f"unfav_{listing_id}")],
-                [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{listing_id}")],
+                [InlineKeyboardButton(t("btn_remove_fav", lang), callback_data=f"unfav_{listing_id}")],
+                [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{listing_id}")],
             ]
             
             if photos and len(photos) > 1:
@@ -1185,14 +1204,13 @@ async def notify_favorites_deleted(bot, listing_id: int):
     if not listing or not favorites_users:
         return
     
-    # Отправляем уведомления (на болгарском!)
+    # Отправляем уведомления на языке каждого пользователя
     for (user_id,) in favorites_users:
         try:
+            lang = get_user_lang(user_id)
             await bot.send_message(
                 user_id,
-                f"❌ *Обявата е изтрита*\n\n"
-                f"#{listing_id} · {listing[5] or '—'}\n\n"
-                f"Обявата беше премахната от вашите любими, тъй като беше изтрита.",
+                t("notify_listing_deleted", lang, lid=listing_id, address=listing[5] or '—'),
                 parse_mode="Markdown"
             )
             # Rate limiting
@@ -2000,14 +2018,18 @@ async def show_my_listings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def manage_listing(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query   = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     parts   = query.data.split("_")
     action  = parts[0]
     lid     = int(parts[1])
-    user_id = query.from_user.id
     conn    = db()
     row     = conn.execute("SELECT owner_id FROM listings WHERE id=?", (lid,)).fetchone()
+    
+    no_access_text = {"bg": "Няма достъп", "ru": "Нет доступа"}
     if not row or row[0] != user_id:
-        await query.answer("Няма достъп", show_alert=True)
+        await query.answer(no_access_text[lang], show_alert=True)
         conn.close()
         return MAIN_MENU
 
@@ -2015,16 +2037,16 @@ async def manage_listing(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
         # Показываем меню редактирования
         await query.message.reply_text(
-            f"✏️ *Редактиране на обява #{lid}*\nИзберете какво да промените:",
+            t("my_edit_title", lang, lid=lid),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📍 Адрес",    callback_data=f"editfield_address_{lid}"),
-                 InlineKeyboardButton("📞 Телефон",  callback_data=f"editfield_phone_{lid}")],
-                [InlineKeyboardButton("💰 Цена",     callback_data=f"editfield_price_{lid}"),
-                 InlineKeyboardButton("📝 Описание", callback_data=f"editfield_desc_{lid}")],
-                [InlineKeyboardButton("📸 Снимки",   callback_data=f"editfield_photo_{lid}")],
-                [InlineKeyboardButton("🗑 Изтрий обявата", callback_data=f"delete_{lid}")],
-                [InlineKeyboardButton("🏠 Начало",   callback_data="go_home")],
+                [InlineKeyboardButton(t("btn_edit_address2", lang), callback_data=f"editfield_address_{lid}"),
+                 InlineKeyboardButton(t("btn_edit_phone2", lang),   callback_data=f"editfield_phone_{lid}")],
+                [InlineKeyboardButton(t("btn_edit_price2", lang),   callback_data=f"editfield_price_{lid}"),
+                 InlineKeyboardButton(t("btn_edit_desc2", lang),    callback_data=f"editfield_desc_{lid}")],
+                [InlineKeyboardButton(t("btn_edit_photos2", lang),  callback_data=f"editfield_photo_{lid}")],
+                [InlineKeyboardButton(t("btn_delete_listing", lang), callback_data=f"delete_{lid}")],
+                [InlineKeyboardButton(t("btn_home", lang),          callback_data="go_home")],
             ])
         )
         return MAIN_MENU
@@ -2054,34 +2076,38 @@ async def editfield_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Редактирование конкретного поля объявления."""
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     parts  = query.data.split("_")  # editfield_address_15
     field  = parts[1]
     lid    = int(parts[2])
-    user_id = query.from_user.id
 
     # Проверяем владельца
     conn = db()
     row = conn.execute("SELECT owner_id FROM listings WHERE id=?", (lid,)).fetchone()
     conn.close()
+    
+    no_access_text = {"bg": "Няма достъп", "ru": "Нет доступа"}
     if not row or row[0] != user_id:
-        await query.answer("Няма достъп", show_alert=True)
+        await query.answer(no_access_text[lang], show_alert=True)
         return MAIN_MENU
 
     ctx.user_data["editfield_lid"] = lid
     ctx.user_data["editfield_field"] = field
 
     prompts = {
-        "address": "📍 Въведете нов *адрес*:",
-        "phone":   "📞 Въведете нов *телефон* (или «-» за да премахнете):",
-        "price":   "💰 Въведете нова *цена* (число, €):",
-        "desc":    "📝 Въведете ново *описание* (или «-» за да премахнете):",
-        "photo":   "📸 Изпратете нови *снимки* (до 5, или «-» за да премахнете всички):",
+        "address": t("edit_prompt_address", lang),
+        "phone":   t("edit_prompt_phone", lang),
+        "price":   t("edit_prompt_price", lang),
+        "desc":    t("edit_prompt_desc", lang),
+        "photo":   t("edit_prompt_photo", lang),
     }
     await query.message.reply_text(
-        prompts.get(field, "Въведете нова стойност:"),
+        prompts.get(field, t("edit_prompt_default", lang)),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Отказ", callback_data="go_home")
+            InlineKeyboardButton(t("btn_cancel2", lang), callback_data="go_home")
         ]])
     )
     return EDIT_FIELD
@@ -2171,6 +2197,8 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return EDIT_FIELD
 
     text = update.message.text.strip()
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
 
     if field == "address":
         result = await geocode(text)
@@ -2178,20 +2206,20 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lat, lon, display = result
             conn.execute("UPDATE listings SET address=?, lat=?, lon=? WHERE id=?", (display, lat, lon, lid))
             conn.commit(); conn.close()
-            await update.message.reply_text(f"✅ Адресът е обновен: {display}", reply_markup=home_ikb())
+            await update.message.reply_text(t("address_updated", lang, address=display), reply_markup=home_ikb(lang))
             
             # Уведомляем подписчиков избранного
             await notify_favorites_changes(ctx.bot, lid, "address", old_address, display)
         else:
             conn.close()
-            await update.message.reply_text("❌ Адресът не е намерен. Опитайте отново:")
+            await update.message.reply_text(t("address_not_found", lang))
             return EDIT_FIELD
 
     elif field == "phone":
         val = None if text == "-" else text
         conn.execute("UPDATE listings SET phone=? WHERE id=?", (val, lid))
         conn.commit(); conn.close()
-        await update.message.reply_text("✅ Телефонът е обновен!", reply_markup=home_ikb())
+        await update.message.reply_text(t("phone_updated", lang), reply_markup=home_ikb(lang))
         
         # Уведомляем подписчиков избранного
         await notify_favorites_changes(ctx.bot, lid, "phone", old_phone, val)
@@ -2201,13 +2229,13 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             price = float(text.replace(",", ".").replace(" ", ""))
             conn.execute("UPDATE listings SET price=? WHERE id=?", (price, lid))
             conn.commit(); conn.close()
-            await update.message.reply_text(f"✅ Цената е обновена: {price:,.0f} €", reply_markup=home_ikb())
+            await update.message.reply_text(t("price_updated", lang, price=f"{price:,.0f}"), reply_markup=home_ikb(lang))
             
             # Уведомляем подписчиков избранного
             await notify_favorites_changes(ctx.bot, lid, "price", old_price, price)
         except ValueError:
             conn.close()
-            await update.message.reply_text("❌ Въведете число, например: 5000")
+            await update.message.reply_text(t("price_invalid", lang))
             return EDIT_FIELD
 
     elif field == "desc":
