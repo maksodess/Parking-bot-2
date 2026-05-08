@@ -308,15 +308,15 @@ def back_and_home_ikb(back_action="go_home"):
     ])
 
 def action_keyboard(lang="bg"):
-    [InlineKeyboardButton(t("btn_language", lang), callback_data="language")],
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🛒 Купува",         callback_data="start_buy"),
-         InlineKeyboardButton("💰 Продава",        callback_data="start_sell")],
-        [InlineKeyboardButton("🔑 Наем",           callback_data="start_rent"),
-         InlineKeyboardButton("📋 Под наем",       callback_data="start_lease")],
-        [InlineKeyboardButton("📁 Моите обяви", callback_data="start_mylistings"),
-         InlineKeyboardButton("⭐ Любими",       callback_data="start_favorites")],
-        [InlineKeyboardButton("🔔 Абонаменти",   callback_data="start_subscriptions")],
+        [InlineKeyboardButton(t("btn_buy", lang),  callback_data="start_buy"),
+         InlineKeyboardButton(t("btn_sell", lang), callback_data="start_sell")],
+        [InlineKeyboardButton(t("btn_rent", lang),  callback_data="start_rent"),
+         InlineKeyboardButton(t("btn_lease", lang), callback_data="start_lease")],
+        [InlineKeyboardButton(t("btn_my_listings", lang), callback_data="start_mylistings"),
+         InlineKeyboardButton(t("btn_favorites", lang),    callback_data="start_favorites")],
+        [InlineKeyboardButton(t("btn_subscriptions", lang), callback_data="start_subscriptions")],
+        [InlineKeyboardButton(t("btn_language", lang), callback_data="language")],
     ])
 
 def type_keyboard(prefix, include_all=False):
@@ -383,7 +383,7 @@ async def cmd_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
         [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
-        [InlineKeyboardButton(t("btn_home", lang), callback_data="home")]
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]
     ]
     await update.message.reply_text(t("language_choose", lang), reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -398,7 +398,7 @@ async def cmd_language_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(t("language_bg", lang), callback_data="lang_bg")],
         [InlineKeyboardButton(t("language_ru", lang), callback_data="lang_ru")],
-        [InlineKeyboardButton(t("btn_home", lang), callback_data="home")]
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]
     ]
     await query.edit_message_text(t("language_choose", lang), reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -421,19 +421,26 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
     ctx.user_data.clear()
     
+    user_id = update.effective_user.id
+    
+    # Получаем или определяем язык пользователя
+    lang = get_user_lang(user_id, ctx)
+    if not lang or lang not in ["bg", "ru"]:
+        # Автоопределение по языку Telegram
+        lang = detect_telegram_lang(update)
+        set_user_lang(user_id, lang, ctx)
+    
+    ctx.user_data["lang"] = lang
+    
     if update.message:
         await update.message.reply_text(
             t("welcome_full", lang),
-            "Пазар за паркоместа и гаражи във Варна.\n\n"
-            "Изберете действие от менюто:",
             parse_mode="Markdown", 
             reply_markup=action_keyboard(lang)
         )
     else:
         await update.callback_query.message.reply_text(
             t("welcome_full", lang),
-            "Пазар за паркоместа и гаражи във Варна.\n\n"
-            "Изберете действие от менюто:",
             parse_mode="Markdown",
             reply_markup=action_keyboard(lang)
         )
@@ -474,47 +481,54 @@ async def go_home(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ── Текстовое меню ────────────────────────────────────────────
 async def main_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     text = update.message.text
-    if text == "🏠 Начало":
+    if text == t("btn_home", lang) or text == "🏠 Начало" or text == "🏠 Главная":
         ctx.user_data.clear()
+        ctx.user_data["lang"] = lang
         await update.message.reply_text(
-            "🚗 *ParkPlace Varna*\nКакво искате да направите?",
+            t("welcome_short", lang),
             parse_mode="Markdown", 
-            reply_markup=action_keyboard()
+            reply_markup=action_keyboard(lang)
         )
         return MAIN_MENU
-    elif text == "📁 Моите обяви":
+    elif text == t("btn_my_listings", lang) or text == "📁 Моите обяви" or text == "📁 Мои объявления":
         return await show_my_listings(update, ctx)
-    elif text == "ℹ️ Помощ":
+    elif text == "ℹ️ Помощ" or text == "ℹ️ Помощь":
         await update.message.reply_text(
-            "*Как да използвате:*\n\n"
-            "🛒 *Купува / Наем* — намиране на обект\n"
-            "💰 *Продава / Под наем* — публикуване на обява\n\n"
-            "📍 *Местоположение на обекта:*\n"
-            "Можете да въведете адрес като текст — ботът ще го намери на картата.\n"
-            "Или изпратете геолокация чрез 📎 → Геолокация.\n\n"
-            "🔍 *Търсене по радиус* — посочете вашето местоположение\n"
-            "и изберете радиус: 500м / 1км / 2км / 5км / Цяла Варна.",
+            t("help_text", lang),
             parse_mode="Markdown", reply_markup=main_keyboard()
         )
         return MAIN_MENU
-    await update.message.reply_text("Какво искате да направите?", reply_markup=action_keyboard())
+    await update.message.reply_text(t("choose_action", lang), reply_markup=action_keyboard(lang))
     return MAIN_MENU
 
 # ── Выбор действия ────────────────────────────────────────────
 
 async def home_button_pressed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Обработка Reply-кнопки 'На главную' из любого состояния."""
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     ctx.user_data.clear()
+    ctx.user_data["lang"] = lang
+    
     await update.message.reply_text(
-        "🚗 *ParkPlace Varna*\nКакво искате да направите?",
-        parse_mode="Markdown", reply_markup=action_keyboard()
+        t("welcome_short", lang),
+        parse_mode="Markdown", 
+        reply_markup=action_keyboard(lang)
     )
     return MAIN_MENU
 
 async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
+    ctx.user_data["lang"] = lang
+    
     action = query.data.replace("start_", "")
 
     # Любими
@@ -523,19 +537,19 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # Мои обявиения
     if action == "mylistings":
-        user_id = query.from_user.id
         conn = db()
         rows = conn.execute("SELECT * FROM listings WHERE owner_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
         conn.close()
         
         if not rows:
-            await query.edit_message_text("Все още нямате обяви.", reply_markup=home_ikb())
+            await query.edit_message_text(t("my_no_listings", lang), reply_markup=home_ikb())
             return MAIN_MENU
         
         # Сохраняем для пагинации
         ctx.user_data["my_listings"] = rows
         
-        await query.edit_message_text(f"📁 *Вашите обяви* ({len(rows)})", parse_mode="Markdown", reply_markup=home_ikb())
+        my_listings_text = {"bg": "📁 *Вашите обяви*", "ru": "📁 *Ваши объявления*"}
+        await query.edit_message_text(f"{my_listings_text.get(lang, my_listings_text['bg'])} ({len(rows)})", parse_mode="Markdown", reply_markup=home_ikb())
         
         # Показываем первую страницу
         await show_my_listings_page(query.message, ctx, page=0)
@@ -544,7 +558,6 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # Мои подписки
     if action == "subscriptions":
-        user_id = query.from_user.id
         conn = db()
         rows = conn.execute(
             "SELECT id, search_type, action, lat, lon, radius, created_at, expires_at, active "
@@ -554,45 +567,57 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         if not rows:
+            sub_no_active_text = {"bg": "🔔 Нямате активни абонаменти.\n\nАбонаментите позволяват получаване на известия за нови обяви.",
+                                  "ru": "🔔 У вас нет активных подписок.\n\nПодписки позволяют получать уведомления о новых объявлениях."}
             await query.edit_message_text(
-                "🔔 Нямате активни абонаменти.\n\n"
-                "Абонаментите позволяват получаване на известия о новых обявиениях.",
+                sub_no_active_text.get(lang, sub_no_active_text["bg"]),
                 reply_markup=home_ikb()
             )
             return MAIN_MENU
         
-        await query.edit_message_text(f"🔔 Вашите абонаменти ({len(rows)}):", reply_markup=home_ikb())
+        sub_title_text = {"bg": "🔔 Вашите абонаменти", "ru": "🔔 Ваши подписки"}
+        await query.edit_message_text(f"{sub_title_text.get(lang, sub_title_text['bg'])} ({len(rows)}):", reply_markup=home_ikb())
         
         for sub_id, stype, act, lat, lon, radius, created, expires, active in rows:
             import datetime
             
-            radius_text = f"{radius//1000} км" if radius >= 1000 else f"{radius} м"
-            type_text = TYPE_LABEL.get(stype, stype)
-            action_text = ACTION_LABEL.get(act, act)
-            status = "✅ Активна" if active else "⏸ Изключен"
+            km_text = {"bg": "км", "ru": "км"}
+            m_text = {"bg": "м", "ru": "м"}
+            radius_text = f"{radius//1000} {km_text[lang]}" if radius >= 1000 else f"{radius} {m_text[lang]}"
+            type_text = get_type_label(stype, lang)
+            action_text = get_action_label(act, lang)
+            
+            status_active = {"bg": "✅ Активна", "ru": "✅ Активна"}
+            status_paused = {"bg": "⏸ Изключен", "ru": "⏸ Приостановлена"}
+            status_expired = {"bg": "⏰ Изтекъл", "ru": "⏰ Истекла"}
+            
+            status = status_active[lang] if active else status_paused[lang]
             
             # Проверяем не истекла ли подписка
             if expires:
                 exp_date = datetime.datetime.strptime(expires, "%Y-%m-%d %H:%M:%S")
                 if exp_date < datetime.datetime.now():
-                    status = "⏰ Изтекъл"
+                    status = status_expired[lang]
             
-            text = (
-                f"🔔 *Абонамент #{sub_id}*\n"
-                f"• {action_text}\n"
-                f"• {type_text}\n"
-                f"• Радиус: {radius_text}\n"
-                f"📅 Създаден: {created[:10]}\n"
-                f"⏰ Изтича: {expires[:10] if expires else '—'}\n"
-                f"{status}"
+            sub_text_template = {"bg": "🔔 *Абонамент #{sub_id}*\n• {action_text}\n• {type_text}\n• Радиус: {radius_text}\n📅 Създаден: {created}\n⏰ Изтича: {expires}\n{status}",
+                                "ru": "🔔 *Подписка #{sub_id}*\n• {action_text}\n• {type_text}\n• Радиус: {radius_text}\n📅 Создана: {created}\n⏰ Истекает: {expires}\n{status}"}
+            
+            text = sub_text_template[lang].format(
+                sub_id=sub_id,
+                action_text=action_text,
+                type_text=type_text,
+                radius_text=radius_text,
+                created=created[:10],
+                expires=expires[:10] if expires else '—',
+                status=status
             )
             
             btns = []
             if active:
-                btns.append(InlineKeyboardButton("⏸ Изключване", callback_data=f"unsub_{sub_id}"))
+                btns.append(InlineKeyboardButton(t("btn_pause", lang), callback_data=f"unsub_{sub_id}"))
             else:
-                btns.append(InlineKeyboardButton("▶️ Включване", callback_data=f"resub_{sub_id}"))
-            btns.append(InlineKeyboardButton("🗑 Изтрий", callback_data=f"delsub_{sub_id}"))
+                btns.append(InlineKeyboardButton(t("btn_resume", lang), callback_data=f"resub_{sub_id}"))
+            btns.append(InlineKeyboardButton(t("btn_delete", lang), callback_data=f"delsub_{sub_id}"))
             
             await query.message.reply_text(
                 text,
@@ -607,14 +632,13 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if action in ("buy", "rent"):
         ctx.user_data["search_action"] = action
         await query.edit_message_text(
-            f"*{ACTION_LABEL[action]}* — изберете тип:",
+            t("ad_choose_type", lang, action=get_action_label(action, lang)),
             parse_mode="Markdown",
             reply_markup=type_keyboard("stype", include_all=True)
         )
         return SEARCH_TYPE
     else:
         # Проверяем лимит объявлений (админ - безлимит)
-        user_id = query.from_user.id
         
         # Админ может создавать сколько угодно
         if user_id != ADMIN_ID:
@@ -628,12 +652,11 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
             if count >= MAX_LISTINGS:
                 await query.edit_message_text(
-                    f"⚠️ Достигнали сте лимита от *{MAX_LISTINGS} активни обяви*.\n\n"
-                    f"Изтрийте стари обяви за да добавите нови.",
+                    t("ad_limit", lang, max=MAX_LISTINGS),
                     parse_mode="Markdown",
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📁 Моите обяви", callback_data="start_mylistings")],
-                        [InlineKeyboardButton("🏠 Начало",      callback_data="go_home")],
+                        [InlineKeyboardButton(t("btn_my_listings", lang), callback_data="start_mylistings")],
+                        [InlineKeyboardButton(t("btn_home", lang),         callback_data="go_home")],
                     ])
                 )
                 return MAIN_MENU
@@ -641,7 +664,7 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["ad"] = {"action": action}
         ctx.user_data["published"] = False
         await query.edit_message_text(
-            f"*{ACTION_LABEL[action]}* — изберете тип:",
+            t("ad_choose_type", lang, action=get_action_label(action, lang)),
             parse_mode="Markdown",
             reply_markup=type_keyboard("adtype", include_all=False)
         )
@@ -3114,14 +3137,19 @@ def main():
     # Глобальный handler для кнопки "🏠 Начало" - работает даже если ConversationHandler потерял состояние
     async def global_home_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Сбрасывает состояние и возвращает в главное меню."""
+        user_id = update.effective_user.id
+        lang = get_user_lang(user_id, ctx)
+        
         ctx.user_data.clear()
+        ctx.user_data["lang"] = lang
+        
         await update.message.reply_text(
-            "🚗 *ParkPlace Varna*\nКакво искате да направите?",
+            t("welcome_short", lang),
             parse_mode="Markdown", 
-            reply_markup=action_keyboard()
+            reply_markup=action_keyboard(lang)
         )
     
-    app.add_handler(MessageHandler(filters.Regex("^🏠 Начало$"), global_home_button))
+    app.add_handler(MessageHandler(filters.Regex("^🏠 (Начало|Главная)$"), global_home_button))
     
     # Устанавливаем команды для меню бота
     async def post_init(application):
