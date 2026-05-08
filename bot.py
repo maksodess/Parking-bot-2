@@ -1938,6 +1938,9 @@ async def contact_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return CONTACT_MSG
 
 async def contact_send(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     lid      = ctx.user_data.get("contact_listing")
     owner_id = ctx.user_data.get("contact_owner")
     user     = update.effective_user
@@ -1949,32 +1952,39 @@ async def contact_send(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
     try:
         uinfo = f"@{user.username}" if user.username else f"ID: {user.id}"
+        msg_text = {"bg": f"📩 *Съобщение* по обявление #{lid}\nОт: {user.full_name} ({uinfo})\n\n{text}",
+                    "ru": f"📩 *Сообщение* по объявлению #{lid}\nОт: {user.full_name} ({uinfo})\n\n{text}"}
         await ctx.bot.send_message(owner_id,
-            f"📩 *Сообщение* по обявиению #{lid}\nОт: {user.full_name} ({uinfo})\n\n{text}",
+            msg_text.get(lang, msg_text["bg"]),
             parse_mode="Markdown")
-        await update.message.reply_text("✅ Отправлено!", reply_markup=home_ikb())
+        await update.message.reply_text(t("message_sent", lang), reply_markup=home_ikb(lang))
     except Exception as e:
         logger.error(f"Failed to send message to owner {owner_id} for listing {lid}: {e}", exc_info=True)
-        await update.message.reply_text("✅ Запазено.", reply_markup=home_ikb())
+        await update.message.reply_text(t("message_saved", lang), reply_markup=home_ikb(lang))
     return MAIN_MENU
 
 # ── Мои обявиения ────────────────────────────────────────────
 async def show_my_listings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     conn    = db()
     rows    = conn.execute("SELECT * FROM listings WHERE owner_id=? ORDER BY id DESC LIMIT 20", (user_id,)).fetchall()
     conn.close()
     if not rows:
-        await update.message.reply_text("Все още нямате обяви.", reply_markup=home_ikb())
+        await update.message.reply_text(t("my_no_listings", lang), reply_markup=home_ikb(lang))
         return MAIN_MENU
-    await update.message.reply_text(f"📁 Вашите обяви ({len(rows)}):", reply_markup=home_ikb())
+    
+    my_header = {"bg": f"📁 Вашите обяви ({len(rows)}):", "ru": f"📁 Ваши объявления ({len(rows)}):"}
+    await update.message.reply_text(my_header[lang], reply_markup=home_ikb(lang))
+    
     for row in rows:
         lid, active = row[0], row[12]
-        status  = "✅ Активна" if active else "⏸ Неактивна"
-        caption = listing_text(row) + f"\n{status}"
+        status  = t("listing_status_active", lang) if active else t("listing_status_inactive", lang)
+        caption = listing_text(row, lang=lang) + f"\n{status}"
         btns = [
-            [InlineKeyboardButton("✏️ Редактиране", callback_data=f"edit_{lid}"),
-             InlineKeyboardButton("🗑 Изтрий",      callback_data=f"delete_{lid}")],
+            [InlineKeyboardButton(t("btn_edit", lang), callback_data=f"edit_{lid}"),
+             InlineKeyboardButton(t("btn_delete", lang), callback_data=f"delete_{lid}")],
         ]
         kb = InlineKeyboardMarkup(btns)
         await send_listing(update.message, caption, row, kb)
@@ -2679,6 +2689,8 @@ async def admin_broadcast_send(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_my(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Команда /my — моите обяви."""
     user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     conn = db()
     rows = conn.execute(
         "SELECT * FROM listings WHERE owner_id=? ORDER BY created_at DESC", (user_id,)
@@ -2686,13 +2698,14 @@ async def cmd_my(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not rows:
-        await update.message.reply_text("Все още нямате обяви.", reply_markup=home_ikb())
+        await update.message.reply_text(t("my_no_listings", lang), reply_markup=home_ikb(lang))
         return MAIN_MENU
 
     # Сохраняем в user_data для пагинации
     ctx.user_data["my_listings"] = rows
     
-    await update.message.reply_text(f"📁 *Вашите обяви* ({len(rows)})", parse_mode="Markdown")
+    my_header = {"bg": f"📁 *Вашите обяви* ({len(rows)})", "ru": f"📁 *Ваши объявления* ({len(rows)})"}
+    await update.message.reply_text(my_header[lang], parse_mode="Markdown")
     
     # Показываем первую страницу
     await show_my_listings_page(update.message, ctx, page=0)
@@ -2829,21 +2842,10 @@ async def cmd_subscriptions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Команда /help — помощ."""
-    text = (
-        "*ParkPlace Varna — паркоместа и гаражи*\n\n"
-        "🛒 *Купува / Наем* — търсене на обект\n"
-        "💰 *Продава / Под наем* — публикуване на обява\n"
-        "⭐ *Любими* — запазени обяви\n"
-        "🔔 *Абонаменти* — известия за нови обяви (⭐100 ≈ 2€)\n\n"
-        "*Команди:*\n"
-        "/start — Главно меню\n"
-        "/my — Моите обяви\n"
-        "/favorites — Любими\n"
-        "/subscriptions — Абонаменти\n"
-        "/help — Помощ\n\n"
-        "_Обявите се изтриват автоматично ако не са потвърдени в рамките на 7 дни_"
-    )
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=home_ikb())
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
+    await update.message.reply_text(t("help_text", lang), parse_mode="Markdown", reply_markup=home_ikb(lang))
     return MAIN_MENU
 
 
@@ -2869,21 +2871,20 @@ async def show_favorites(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not favorites:
-        text = "⭐ Все още нямате любими обяви.\n\nДобавяйте обяви в любими, за да не ги загубите!"
         if query:
-            await query.edit_message_text(text, reply_markup=home_ikb())
+            await query.edit_message_text(t("fav_empty", lang), reply_markup=home_ikb(lang))
         else:
-            await update.message.reply_text(text, reply_markup=home_ikb())
+            await update.message.reply_text(t("fav_empty", lang), reply_markup=home_ikb(lang))
         return MAIN_MENU
 
     # Сохраняем для пагинации
     ctx.user_data["favorites_listings"] = favorites
 
-    header = f"⭐ *Любими* ({len(favorites)} обяви)"
+    fav_header = {"bg": f"⭐ *Любими* ({len(favorites)} обяви)", "ru": f"⭐ *Избранное* ({len(favorites)} объявлений)"}
     if query:
-        await query.edit_message_text(header, parse_mode="Markdown")
+        await query.edit_message_text(fav_header[lang], parse_mode="Markdown")
     else:
-        await update.message.reply_text(header, parse_mode="Markdown")
+        await update.message.reply_text(fav_header[lang], parse_mode="Markdown")
 
     # Показываем первую страницу
     msg_target = query.message if query else update.message
@@ -2894,6 +2895,9 @@ async def show_favorites(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def show_favorites_page(message, ctx, page=0):
     """Показывает страницу избранного (5 объявлений)."""
+    user_id = message.chat.id
+    lang = get_user_lang(user_id, ctx)
+    
     ITEMS_PER_PAGE = 5
     
     favorites = ctx.user_data.get("favorites_listings", [])
@@ -2911,10 +2915,10 @@ async def show_favorites_page(message, ctx, page=0):
     
     for row in page_listings:
         lid = row[0]
-        caption = listing_text(row)
+        caption = listing_text(row, lang=lang)
         buttons = [
-            [InlineKeyboardButton("💔 Премахни от любими", callback_data=f"unfav_{lid}")],
-            [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{lid}")],
+            [InlineKeyboardButton(t("btn_remove_fav", lang), callback_data=f"unfav_{lid}")],
+            [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{lid}")],
         ]
         keyboard = InlineKeyboardMarkup(buttons)
         try:
@@ -2930,15 +2934,15 @@ async def show_favorites_page(message, ctx, page=0):
     nav_buttons = []
     
     if page < total_pages - 1:
-        nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"fav_page_{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(t("btn_next_page", lang), callback_data=f"fav_page_{page+1}"))
     
     keyboard_rows = []
     if nav_buttons:
         keyboard_rows.append(nav_buttons)
-    keyboard_rows.append([InlineKeyboardButton("🏠 Начало", callback_data="go_home")])
+    keyboard_rows.append([InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")])
     
     await message.reply_text(
-        f"📄 Страница {page + 1} от {total_pages} (общо {total} обяви)",
+        t("page_info", lang, page=page+1, total_pages=total_pages, total_listings=total),
         reply_markup=InlineKeyboardMarkup(keyboard_rows)
     )
 
@@ -2964,24 +2968,26 @@ async def toggle_favorite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Добавить/удалить из избранного."""
     query = update.callback_query
     await query.answer()
+    
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
 
     parts = query.data.split("_")
     action = parts[0]   # fav или unfav
     lid = int(parts[1])
-    user_id = query.from_user.id
 
     conn = db()
     if action == "fav":
         try:
             conn.execute("INSERT INTO favorites (user_id, listing_id) VALUES (?, ?)", (user_id, lid))
             conn.commit()
-            await query.answer("⭐ Добавено в любими!", show_alert=True)
+            await query.answer(t("fav_added", lang), show_alert=True)
         except Exception:
-            await query.answer("Вече в любими", show_alert=True)
+            await query.answer(t("fav_already", lang), show_alert=True)
     else:
         conn.execute("DELETE FROM favorites WHERE user_id=? AND listing_id=?", (user_id, lid))
         conn.commit()
-        await query.answer("💔 Премахнато от любими", show_alert=True)
+        await query.answer(t("fav_removed", lang), show_alert=True)
     conn.close()
 
     return MAIN_MENU
