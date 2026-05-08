@@ -297,14 +297,14 @@ def main_keyboard():
     from telegram import ReplyKeyboardRemove
     return ReplyKeyboardRemove()
 
-def home_ikb():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Начало", callback_data="go_home")]])
+def home_ikb(lang="bg"):
+    return InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]])
 
-def back_and_home_ikb(back_action="go_home"):
+def back_and_home_ikb(back_action="go_home", lang="bg"):
     """Кнопки Назад + На главную."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Назад", callback_data=back_action)],
-        [InlineKeyboardButton("🏠 Начало", callback_data="go_home")],
+        [InlineKeyboardButton(t("btn_back", lang), callback_data=back_action)],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
     ])
 
 def action_keyboard(lang="bg"):
@@ -922,6 +922,9 @@ async def ad_description(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def ad_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     # Нажали "Готово"
     if update.callback_query:
         await update.callback_query.answer()
@@ -955,12 +958,13 @@ async def ad_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Ставим джоб через 1.5 секунды — если за это время придут ещё фото, он перезапустится
         async def send_photo_prompt(context):
             cnt = len(context.job.data["photos"])
+            user_lang = context.job.data["lang"]
             await context.job.data["message"].reply_text(
-                f"✅ Получени *{cnt}* снимки.\nНатиснете *Готово* за да продължите:",
+                t("photos_received", user_lang, cnt=cnt),
                 parse_mode="Markdown",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"✅ Готово ({cnt} снимки)", callback_data="photos_done")],
-                    [InlineKeyboardButton("⏩ Пропускане", callback_data="photos_done")],
+                    [InlineKeyboardButton(t("photos_done_btn", user_lang, cnt=cnt), callback_data="photos_done")],
+                    [InlineKeyboardButton(t("btn_skip", user_lang), callback_data="photos_done")],
                 ])
             )
 
@@ -968,16 +972,16 @@ async def ad_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             send_photo_prompt,
             when=1.5,
             name=f"photo_done_{update.effective_user.id}",
-            data={"photos": photos, "message": update.message}
+            data={"photos": photos, "message": update.message, "lang": lang}
         )
         return AD_PHOTO
 
     # Что-то другое
     await update.message.reply_text(
-        "📸 Изпратете снимки или натиснете *Пропускане*:",
+        t("photos_send_or_skip", lang),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏩ Пропускане", callback_data="photos_done")],
+            [InlineKeyboardButton(t("btn_skip", lang), callback_data="photos_done")],
         ])
     )
     return AD_PHOTO
@@ -985,15 +989,23 @@ async def ad_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def _show_ad_preview(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Показать превью объявления перед публикацией."""
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     ad = ctx.user_data["ad"]
-    geo_line   = "🗺 Геолокация ✅" if ad.get("lat") else "🗺 Без геолокация"
-    phone_line = f"📞 {ad['phone']}" if ad.get("phone") else "📞 Без телефон"
+    
+    geo_line_text = {"bg": "🗺 Геолокация ✅", "ru": "🗺 Геолокация ✅"}
+    no_geo_text = {"bg": "🗺 Без геолокация", "ru": "🗺 Без геолокации"}
+    phone_text = {"bg": "📞 Без телефон", "ru": "📞 Без телефона"}
+    
+    geo_line   = geo_line_text[lang] if ad.get("lat") else no_geo_text[lang]
+    phone_line = f"📞 {ad['phone']}" if ad.get("phone") else phone_text[lang]
     photos     = ad.get("photos", [])
-    photo_line = f"🖼 {len(photos)} снимки" if photos else "🖼 Без снимка"
+    photo_line = t("photo_line_with", lang, cnt=len(photos)) if photos else t("photo_line_without", lang)
 
     preview = (
-        f"*Проверете обявата:*\n\n"
-        f"{ACTION_LABEL.get(ad.get('action',''))} · {TYPE_LABEL.get(ad.get('type',''))}\n"
+        t("ad_review", lang) +
+        f"{get_action_label(ad.get('action',''), lang)} · {get_type_label(ad.get('type',''), lang)}\n"
         f"📍 {ad.get('address', '—')}\n"
         f"{phone_line}\n"
         f"{geo_line}\n"
@@ -1004,13 +1016,13 @@ async def _show_ad_preview(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     preview += photo_line
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Публикуване", callback_data="ad_publish")],
-        [InlineKeyboardButton("✏️ Адрес",    callback_data="ad_edit_address"),
-         InlineKeyboardButton("✏️ Телефон",  callback_data="ad_edit_phone")],
-        [InlineKeyboardButton("✏️ Цена",     callback_data="ad_edit_price"),
-         InlineKeyboardButton("✏️ Описание", callback_data="ad_edit_desc")],
-        [InlineKeyboardButton("✏️ Снимки",   callback_data="ad_edit_photo")],
-        [InlineKeyboardButton("❌ Отмена",   callback_data="ad_cancel")],
+        [InlineKeyboardButton(t("btn_publish", lang), callback_data="ad_publish")],
+        [InlineKeyboardButton(t("btn_edit_address2", lang),  callback_data="ad_edit_address"),
+         InlineKeyboardButton(t("btn_edit_phone2", lang),    callback_data="ad_edit_phone")],
+        [InlineKeyboardButton(t("btn_edit_price2", lang),    callback_data="ad_edit_price"),
+         InlineKeyboardButton(t("btn_edit_desc2", lang),     callback_data="ad_edit_desc")],
+        [InlineKeyboardButton(t("btn_edit_photos2", lang),   callback_data="ad_edit_photo")],
+        [InlineKeyboardButton(t("btn_cancel", lang),         callback_data="ad_cancel")],
     ])
 
     chat_id = update.effective_chat.id
@@ -1280,12 +1292,15 @@ async def notify_subscribers(ctx, listing_id: int, action: str, ltype: str, lat:
 async def ad_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     if query.data == "ad_cancel":
         try:
-            await query.edit_message_text("❌ Обявата е отменена.", reply_markup=home_ikb())
+            await query.edit_message_text(t("ad_cancelled", lang), reply_markup=home_ikb(lang))
         except Exception as e:
             logger.warning(f"Could not edit message, sending new one: {e}")
-            await query.message.reply_text("❌ Обявата е отменена.", reply_markup=home_ikb())
+            await query.message.reply_text(t("ad_cancelled", lang), reply_markup=home_ikb(lang))
         return MAIN_MENU
 
     ad   = ctx.user_data.get("ad", {})
@@ -1313,9 +1328,9 @@ async def ad_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
     try:
-        await query.edit_message_text("✅ Обявата е публикувана!", reply_markup=home_ikb())
+        await query.edit_message_text(t("ad_published", lang), reply_markup=home_ikb(lang))
     except Exception:
-        await query.message.reply_text("✅ Обявата е публикувана!", reply_markup=home_ikb())
+        await query.message.reply_text(t("ad_published", lang), reply_markup=home_ikb(lang))
     return MAIN_MENU
 
 # ═══════════════════════════════════════════════════════════════
