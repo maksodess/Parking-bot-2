@@ -913,15 +913,7 @@ async def ad_description(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
     return AD_PHOTO
-        "📸 Изпратете до 5 снимки *наведнъж* (незадължително)\n\n"
-        "Изберете всички снимки в галерията и изпратете с едно съобщение.\n"
-        "Или «-» за да пропуснете:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("⏩ Пропускане (без снимки)", callback_data="photos_done")],
-        ])
-    )
-    return AD_PHOTO
+
 
 async def ad_photo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Нажали "Готово"
