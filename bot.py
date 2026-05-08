@@ -423,12 +423,18 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     user_id = update.effective_user.id
     
-    # Получаем или определяем язык пользователя
-    lang = get_user_lang(user_id, ctx)
-    if not lang or lang not in ["bg", "ru"]:
-        # Автоопределение по языку Telegram
+    # Проверяем, есть ли пользователь в базе данных
+    with get_db() as conn:
+        user_exists = conn.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,)).fetchone()
+    
+    # Если пользователя нет в базе - это первый запуск, определяем язык автоматически
+    if not user_exists:
         lang = detect_telegram_lang(update)
         set_user_lang(user_id, lang, ctx)
+        logger.info(f"New user {user_id} with auto-detected language: {lang}")
+    else:
+        # Пользователь существует - берем его сохраненный язык
+        lang = get_user_lang(user_id, ctx)
     
     ctx.user_data["lang"] = lang
     
