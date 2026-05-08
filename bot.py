@@ -319,58 +319,58 @@ def action_keyboard(lang="bg"):
         [InlineKeyboardButton(t("btn_language", lang), callback_data="language")],
     ])
 
-def type_keyboard(prefix, include_all=False):
+def type_keyboard(prefix, include_all=False, lang="bg"):
     rows = [
-        [InlineKeyboardButton("🅿️ Паркомясто", callback_data=f"{prefix}_parking")],
-        [InlineKeyboardButton("🚘 Гараж",       callback_data=f"{prefix}_garage")],
+        [InlineKeyboardButton(t("btn_type_parking", lang), callback_data=f"{prefix}_parking")],
+        [InlineKeyboardButton(t("btn_type_garage", lang),  callback_data=f"{prefix}_garage")],
     ]
     if include_all:
-        rows.append([InlineKeyboardButton("📋 Всичко наведнъж", callback_data=f"{prefix}_all")])
-    rows.append([InlineKeyboardButton("🏠 Начало", callback_data="go_home")])
+        rows.append([InlineKeyboardButton(t("btn_type_all", lang), callback_data=f"{prefix}_all")])
+    rows.append([InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")])
     return InlineKeyboardMarkup(rows)
 
-def location_choice_keyboard(prefix):
+def location_choice_keyboard(prefix, lang="bg"):
     """Выбор способа указания местоположения."""
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✏️ Въвеждане на адрес",       callback_data=f"{prefix}_text")],
-        [InlineKeyboardButton("📍 Изпращане на геолокация", callback_data=f"{prefix}_geo")],
-        [InlineKeyboardButton("🏠 Начало",           callback_data="go_home")],
+        [InlineKeyboardButton(t("btn_enter_address", lang),    callback_data=f"{prefix}_text")],
+        [InlineKeyboardButton(t("btn_send_location", lang),    callback_data=f"{prefix}_geo")],
+        [InlineKeyboardButton(t("btn_home", lang),             callback_data="go_home")],
     ])
 
-def geo_ad_keyboard():
+def geo_ad_keyboard(lang="bg"):
     return ReplyKeyboardMarkup([
-        [KeyboardButton("📍 Изпращане на геолокация на обекта", request_location=True)],
+        [KeyboardButton(t("btn_send_location_object", lang), request_location=True)],
     ], resize_keyboard=True, one_time_keyboard=True)
 
-def geo_search_keyboard():
+def geo_search_keyboard(lang="bg"):
     return ReplyKeyboardMarkup([
-        [KeyboardButton("📍 Изпращане на моята геолокация", request_location=True)],
+        [KeyboardButton(t("btn_send_my_location", lang), request_location=True)],
     ], resize_keyboard=True, one_time_keyboard=True)
 
-def phone_keyboard():
+def phone_keyboard(lang="bg"):
     """Клавиатура с бутон за автоматично изпращане на вашия номер."""
     return ReplyKeyboardMarkup([
-        [KeyboardButton("📱 Изпращане на моя номер", request_contact=True)],
-        [KeyboardButton("⏩ Пропускане")],
+        [KeyboardButton(t("btn_send_phone", lang), request_contact=True)],
+        [KeyboardButton(t("btn_skip", lang))],
     ], resize_keyboard=True, one_time_keyboard=True)
 
-def radius_keyboard():
+def radius_keyboard(lang="bg"):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("500 м", callback_data="radius_500"),
          InlineKeyboardButton("1 км",  callback_data="radius_1000")],
         [InlineKeyboardButton("2 км",  callback_data="radius_2000"),
          InlineKeyboardButton("5 км",  callback_data="radius_5000")],
-        [InlineKeyboardButton("📋 Цяла Варна", callback_data="radius_all")],
-        [InlineKeyboardButton("🏠 Начало", callback_data="go_home")],
+        [InlineKeyboardButton(t("radius_all", lang), callback_data="radius_all")],
+        [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
     ])
 
-def admin_keyboard():
+def admin_keyboard(lang="bg"):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 Обяви",   callback_data="adm_listings_0"),
-         InlineKeyboardButton("👥 Потребители", callback_data="adm_users")],
-        [InlineKeyboardButton("📊 Статистика",   callback_data="adm_stats"),
-         InlineKeyboardButton("📢 Изпращане",     callback_data="adm_broadcast")],
-        [InlineKeyboardButton("🏠 Начало",   callback_data="go_home")],
+        [InlineKeyboardButton(t("btn_adm_listings", lang),   callback_data="adm_listings_0"),
+         InlineKeyboardButton(t("btn_adm_users", lang),      callback_data="adm_users")],
+        [InlineKeyboardButton(t("btn_adm_stats", lang),      callback_data="adm_stats"),
+         InlineKeyboardButton(t("btn_adm_broadcast", lang),  callback_data="adm_broadcast")],
+        [InlineKeyboardButton(t("btn_home", lang),           callback_data="go_home")],
     ])
 
 # ── /start ────────────────────────────────────────────────────
@@ -634,7 +634,7 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             t("ad_choose_type", lang, action=get_action_label(action, lang)),
             parse_mode="Markdown",
-            reply_markup=type_keyboard("stype", include_all=True)
+            reply_markup=type_keyboard("stype", include_all=True, lang=lang)
         )
         return SEARCH_TYPE
     else:
@@ -666,7 +666,7 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             t("ad_choose_type", lang, action=get_action_label(action, lang)),
             parse_mode="Markdown",
-            reply_markup=type_keyboard("adtype", include_all=False)
+            reply_markup=type_keyboard("adtype", include_all=False, lang=lang)
         )
         return AD_TYPE
 
@@ -676,10 +676,13 @@ async def start_action(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def ad_type_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     ctx.user_data["ad"]["type"] = query.data.replace("adtype_", "")
     await query.edit_message_text(
-        "📍 Как да посочите местоположението на обекта?",
-        reply_markup=location_choice_keyboard("adloc")
+        t("ad_location_how", lang),
+        reply_markup=location_choice_keyboard("adloc", lang)
     )
     return AD_LOCATION_CHOICE
 
@@ -687,37 +690,37 @@ async def ad_type_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def ad_location_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
 
     if query.data == "adloc_text":
         await query.edit_message_text(
-            "✏️ Въведете *адрес на обекта*:\n\n"
-            "Например: _ул. Цар Симеон I 15_ или _бул. Приморски 42_\n\n"
-            "Ботът ще намери това място на картата.",
+            t("ad_enter_address", lang),
             parse_mode="Markdown"
         )
         return AD_ADDRESS_TEXT
 
     elif query.data == "adloc_geo":
         await query.edit_message_text(
-            "📍 Изпратете геолокация на обекта чрез бутона по-долу.\n\n"
-            "Не е нужно да сте наблизо:\n"
-            "📎 → Геолокация → намерете адрес → преместете маркера → Изпращане",
+            t("ad_send_geo", lang),
             parse_mode="Markdown"
         )
         await query.message.reply_text(
-            "Натиснете бутона:", reply_markup=geo_ad_keyboard()
+            t("ad_press_button", lang), reply_markup=geo_ad_keyboard(lang)
         )
         return AD_LOCATION_GEO
 
 # Адрес текстом → геокодинг
 async def ad_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     address = update.message.text.strip()
-    await update.message.reply_text("🔍 Търся на картата...")
+    await update.message.reply_text(t("ad_searching", lang))
     result = await geocode(address)
     if not result:
         await update.message.reply_text(
-            "❌ Адресът не е намерен. Опитайте по-точно:\n"
-            "_ул. Цар Симеон I 15_ или _бул. Владислав Варненчик 42_",
+            t("ad_not_found", lang),
             parse_mode="Markdown"
         )
         return AD_ADDRESS_TEXT
@@ -729,12 +732,12 @@ async def ad_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_location(latitude=lat, longitude=lon)
     await update.message.reply_text(
-        f"📍 Намерих: _{display[:120]}_\n\nТова ли е правилното място?",
+        t("ad_confirm_address", lang, display=display[:120]),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Да, правилно",          callback_data="addrconfirm_ok")],
-            [InlineKeyboardButton("❌ Не, въведи отново",  callback_data="addrconfirm_retry")],
-            [InlineKeyboardButton("📍 Уточни с геолокация", callback_data="addrconfirm_geo")],
+            [InlineKeyboardButton(t("btn_yes_correct", lang), callback_data="addrconfirm_ok")],
+            [InlineKeyboardButton(t("btn_no_retry", lang),    callback_data="addrconfirm_retry")],
+            [InlineKeyboardButton(t("btn_clarify_geo", lang), callback_data="addrconfirm_geo")],
         ])
     )
     return AD_ADDRESS_CONFIRM
@@ -742,39 +745,40 @@ async def ad_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def ad_address_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
 
     if query.data == "addrconfirm_retry":
-        await query.edit_message_text("✏️ Въведете адрес отново:")
+        await query.edit_message_text(t("ad_retry_address", lang))
         return AD_ADDRESS_TEXT
 
     elif query.data == "addrconfirm_geo":
-        await query.edit_message_text(
-            "📍 Изпратете точна геолокацию чрез 📎 → Геолокация:"
-        )
-        await query.message.reply_text("Натиснете бутона:", reply_markup=geo_ad_keyboard())
+        await query.edit_message_text(t("ad_retry_geo", lang))
+        await query.message.reply_text(t("ad_press_button", lang), reply_markup=geo_ad_keyboard(lang))
         return AD_LOCATION_GEO
 
     # ok — подтверждено
     # Если редактируем — возвращаемся в превью
     if ctx.user_data.get("editing_mode"):
         ctx.user_data["editing_mode"] = False
-        await query.edit_message_text("✅ Адресът е обновен!")
+        await query.edit_message_text(t("ad_address_updated", lang))
         return await _show_ad_preview(update, ctx)
     
     # Иначе переходим к телефону
-    await query.edit_message_text("✅ Адрес подтверждён!")
+    await query.edit_message_text(t("ad_address_confirmed", lang))
     await query.message.reply_text(
-        "📞 *Телефонен номер* за връзка\n\n"
-        "Натиснете бутона, за да изпратите вашия номер автоматично,\n"
-        "или въведете номер ръчно, или натиснете «Пропускане».",
+        t("ad_phone_prompt", lang),
         parse_mode="Markdown",
-        reply_markup=phone_keyboard()
+        reply_markup=phone_keyboard(lang)
     )
     return AD_PHONE
 
 # Геолокация чрез скрепку
 async def ad_location_geo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     loc = update.message.location
     
     # 🔴 ПРОВЕРКА: объявление должно быть в пределах 50км от центра Варны
@@ -786,18 +790,15 @@ async def ad_location_geo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     if distance_from_varna > MAX_DISTANCE_FROM_VARNA:
         await update.message.reply_text(
-            f"❌ *Обявата е твърде далеч от Варна!*\n\n"
-            f"Разстояние от центъра на Варна: {distance_from_varna/1000:.1f} км\n"
-            f"Максимално разрешено: {MAX_DISTANCE_FROM_VARNA/1000:.0f} км\n\n"
-            f"💡 Този бот е само за обяви във Варна и околностите.\n"
-            f"Моля, изберете локация във Варна.",
+            t("ad_too_far_details", lang, 
+              dist=f"{distance_from_varna/1000:.1f}",
+              max_dist=f"{MAX_DISTANCE_FROM_VARNA/1000:.0f}"),
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardRemove()
         )
         # Возвращаем в состояние выбора способа указания локации
         await update.message.reply_text(
-            "📍 *Местоположение на обекта*\n\n"
-            "Как искате да посочите локацията?",
+            t("ad_location_object", lang),
             parse_mode="Markdown",
             reply_markup=location_choice_keyboard("ad")
         )
@@ -809,34 +810,36 @@ async def ad_location_geo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Если адрес ещё не задан — пробуем определить его по координатам
     if not ctx.user_data["ad"].get("address"):
         await update.message.reply_text(
-            "🔍 Определям адрес по геолокация...",
+            t("ad_detecting_address", lang),
             reply_markup=ReplyKeyboardRemove()  # Убираем кнопку
         )
         addr = await reverse_geocode(loc.latitude, loc.longitude)
         if addr:
             ctx.user_data["ad"]["address"] = addr if isinstance(addr, str) else ", ".join(addr)
-            msg = f"✅ Геолокацията е запазена!\n📍 *{ctx.user_data['ad']['address']}*\n\n"
+            msg = t("ad_geo_saved", lang) + f"\n📍 *{ctx.user_data['ad']['address']}*\n\n"
         else:
             ctx.user_data["ad"]["address"] = f"{loc.latitude:.5f}, {loc.longitude:.5f}"
-            msg = "✅ Геолокацията е запазена! (адресът не можа да бъде определен)\n\n"
+            msg = t("ad_geo_saved_no_addr", lang) + "\n\n"
     else:
-        msg = "✅ Геолокацията е запазена!\n\n"
+        msg = t("ad_geo_saved", lang) + "\n\n"
 
     await update.message.reply_text(
-        msg + "📞 *Телефонен номер* за връзка\n\n"
-        "Натиснете бутона, за да изпратите вашия номер автоматично,\n"
-        "или въведете номер ръчно, или натиснете «Пропускане».",
-        parse_mode="Markdown", reply_markup=phone_keyboard()
+        msg + t("ad_phone_prompt", lang),
+        parse_mode="Markdown", reply_markup=phone_keyboard(lang)
     )
     return AD_PHONE
 
 async def ad_phone(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     # Если пришёл контакт через кнопку
     if update.message.contact:
         ctx.user_data["ad"]["phone"] = update.message.contact.phone_number
     else:
         text = update.message.text.strip()
-        if text == "⏩ Пропускане" or text == "-":
+        skip_texts = ["⏩ Пропускане", "⏩ Пропустить", "-"]
+        if text in skip_texts:
             ctx.user_data["ad"]["phone"] = None
         else:
             # Валидация телефона
@@ -844,9 +847,7 @@ async def ad_phone(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             phone_clean = re.sub(r'[\s\-\(\)]', '', text)
             if not re.match(r'^\+?[0-9]{7,15}$', phone_clean):
                 await update.message.reply_text(
-                    "❌ Некоректен формат на телефон.\n"
-                    "Пример: *+359888123456* или *0888123456*\n"
-                    "Или натиснете «⏩ Пропускане»",
+                    t("ad_phone_invalid", lang),
                     parse_mode="Markdown"
                 )
                 return AD_PHONE
@@ -856,49 +857,62 @@ async def ad_phone(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if ctx.user_data.get("editing_mode"):
         ctx.user_data["editing_mode"] = False
         from telegram import ReplyKeyboardRemove
-        await update.message.reply_text("✅ Телефонът е обновен!", reply_markup=ReplyKeyboardRemove())
+        phone_updated_text = {"bg": "✅ Телефонът е обновен!", "ru": "✅ Телефон обновлён!"}
+        await update.message.reply_text(phone_updated_text.get(lang, phone_updated_text["bg"]), reply_markup=ReplyKeyboardRemove())
         return await _show_ad_preview(update, ctx)
 
     from telegram import ReplyKeyboardRemove
     await update.message.reply_text(
-        "💰 Въведете *цена* (число, €):",
+        t("ad_price_prompt", lang),
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove()
     )
     return AD_PRICE
 
 async def ad_price(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     try:
         price = float(update.message.text.strip().replace(" ", "").replace(",", "."))
         ctx.user_data["ad"]["price"] = price
     except ValueError:
-        await update.message.reply_text("❌ Въведете число, например: 5000")
+        await update.message.reply_text(t("ad_price_invalid", lang))
         return AD_PRICE
     
     # Если редактируем — возвращаемся в превью
     if ctx.user_data.get("editing_mode"):
         ctx.user_data["editing_mode"] = False
-        await update.message.reply_text("✅ Цената е обновена!")
+        price_updated_text = {"bg": "✅ Цената е обновена!", "ru": "✅ Цена обновлена!"}
+        await update.message.reply_text(price_updated_text.get(lang, price_updated_text["bg"]))
         return await _show_ad_preview(update, ctx)
     
     await update.message.reply_text(
-        "📝 Добавете *описание* (площ, особености, достъп)\n"
-        "Или «-» за да пропуснете:", parse_mode="Markdown"
+        t("ad_desc_prompt", lang), 
+        parse_mode="Markdown"
     )
     return AD_DESCRIPTION
 
 async def ad_description(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     text = update.message.text.strip()
     ctx.user_data["ad"]["description"] = None if text == "-" else text
     
     # Если редактируем — возвращаемся в превью
     if ctx.user_data.get("editing_mode"):
         ctx.user_data["editing_mode"] = False
-        await update.message.reply_text("✅ Описанието е обновено!")
+        desc_updated_text = {"bg": "✅ Описанието е обновено!", "ru": "✅ Описание обновлено!"}
+        await update.message.reply_text(desc_updated_text.get(lang, desc_updated_text["bg"]))
         return await _show_ad_preview(update, ctx)
     
     ctx.user_data["ad"]["photos"] = []
     await update.message.reply_text(
+        t("ad_photos_prompt", lang),
+        parse_mode="Markdown"
+    )
+    return AD_PHOTO
         "📸 Изпратете до 5 снимки *наведнъж* (незадължително)\n\n"
         "Изберете всички снимки в галерията и изпратете с едно съобщение.\n"
         "Или «-» за да пропуснете:",
@@ -1022,31 +1036,33 @@ async def ad_edit_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Обработка кнопок редактирования в финальном просмотре."""
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
     
     # Устанавливаем флаг редактирования
     ctx.user_data["editing_mode"] = True
     
     if query.data == "ad_edit_address":
         await query.message.reply_text(
-            "📍 Как да посочите ново местоположение?",
-            reply_markup=location_choice_keyboard("adloc")
+            t("ad_new_location", lang),
+            reply_markup=location_choice_keyboard("adloc", lang)
         )
         return AD_LOCATION_CHOICE
     
     elif query.data == "ad_edit_phone":
         await query.message.reply_text(
-            "📞 Натиснете бутона или въведете ръчно:",
-            reply_markup=phone_keyboard()
+            t("ad_new_phone", lang),
+            reply_markup=phone_keyboard(lang)
         )
         return AD_PHONE
     
     elif query.data == "ad_edit_price":
-        await query.message.reply_text("💰 Въведете нова *цена* (число, €):", parse_mode="Markdown")
+        await query.message.reply_text(t("ad_new_price", lang), parse_mode="Markdown")
         return AD_PRICE
     
     elif query.data == "ad_edit_desc":
         await query.message.reply_text(
-            "📝 Въведете ново *описание*\nИли «-» за да премахнете:",
+            t("ad_new_desc", lang),
             parse_mode="Markdown"
         )
         return AD_DESCRIPTION
@@ -1055,7 +1071,7 @@ async def ad_edit_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # ВАЖНО: Очищаем старые фото перед добавлением новых
         ctx.user_data["ad"]["photos"] = []
         await query.message.reply_text(
-            "📸 Изпратете нови снимки (до 5)\nИли «-» за да премахнете:",
+            t("ad_new_photos", lang),
             parse_mode="Markdown"
         )
         return AD_PHOTO
@@ -1310,67 +1326,77 @@ async def ad_publish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def search_type_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     ctx.user_data["search_type"] = query.data.replace("stype_", "")
     await query.edit_message_text(
-        "📍 Как да посочите вашето местоположение за търсене?",
-        reply_markup=location_choice_keyboard("sloc")
+        t("search_location_how", lang),
+        reply_markup=location_choice_keyboard("sloc", lang)
     )
     return SEARCH_LOCATION_CHOICE
 
 async def search_location_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
 
     if query.data == "sloc_text":
         await query.edit_message_text(
-            "✏️ Въведете *вашия адрес*:\n\n"
-            "Например: _ул. Цар Симеон I 15_\n\n"
-            "Ботът ще го намери на картата и ще предложи радиус за търсене.",
+            t("search_enter_address", lang),
             parse_mode="Markdown"
         )
         return SEARCH_ADDRESS_TEXT
 
     elif query.data == "sloc_geo":
         await query.edit_message_text(
-            "📍 Изпратете вашата геолокация:\n\n"
-            "• Натиснете бутона «Изпращане на моята геолокация» по-долу\n"
-            "• Или чрез кламер 📎 → Геолокация → намерете място на картата → Изпращане"
+            t("search_send_geo", lang)
         )
-        await query.message.reply_text("Изберете начин:", reply_markup=geo_search_keyboard())
+        await query.message.reply_text(t("search_choose_method", lang), reply_markup=geo_search_keyboard(lang))
         return SEARCH_GEO
 
 async def search_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     address = update.message.text.strip()
-    await update.message.reply_text("🔍 Търся на картата...")
+    await update.message.reply_text(t("search_searching", lang))
     result = await geocode(address)
     if not result:
         await update.message.reply_text(
-            "❌ Адресът не е намерен. Опитайте по-точно:"
+            t("search_not_found", lang)
         )
         return SEARCH_ADDRESS_TEXT
     lat, lon, display = result
     ctx.user_data["search_lat"] = lat
     ctx.user_data["search_lon"] = lon
     await update.message.reply_location(latitude=lat, longitude=lon)
+    
+    found_text = {"bg": f"📍 _{display[:100]}_\n\n📏 Изберете *радиус поиска*:",
+                  "ru": f"📍 _{display[:100]}_\n\n📏 Выберите *радиус поиска*:"}
     await update.message.reply_text(
-        f"📍 _{display[:100]}_\n\n📏 Изберете *радиус поиска*:",
-        parse_mode="Markdown", reply_markup=radius_keyboard()
+        found_text.get(lang, found_text["bg"]),
+        parse_mode="Markdown", reply_markup=radius_keyboard(lang)
     )
     return SEARCH_RADIUS
 
 async def search_geo_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     loc = update.message.location
     ctx.user_data["search_lat"] = loc.latitude
     ctx.user_data["search_lon"] = loc.longitude
     await update.message.reply_text(
-        "📏 Изберете *радиус поиска*:",
+        t("choose_radius", lang),
         parse_mode="Markdown", 
         reply_markup=ReplyKeyboardRemove()  # Убираем кнопку геолокации
     )
     await update.message.reply_text(
-        "Изберете радиус:",
-        reply_markup=radius_keyboard()
+        t("choose_radius", lang),
+        reply_markup=radius_keyboard(lang)
     )
     return SEARCH_RADIUS
 
@@ -1579,7 +1605,10 @@ async def search_page_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def change_radius(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("📏 Изберете радиус:", reply_markup=radius_keyboard())
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
+    
+    await query.edit_message_text(t("choose_radius", lang), reply_markup=radius_keyboard(lang))
     return SEARCH_RADIUS
 
 # ── Карта ─────────────────────────────────────────────────────
@@ -2316,8 +2345,12 @@ async def fix_addresses_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     return MAIN_MENU
 
 async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("❌ Няма достъп.")
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
+    if user_id != ADMIN_ID:
+        no_access_text = {"bg": "❌ Няма достъп.", "ru": "❌ Нет доступа."}
+        await update.message.reply_text(no_access_text.get(lang, no_access_text["bg"]))
         return MAIN_MENU
     conn    = db()
     total   = conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
@@ -2325,11 +2358,15 @@ async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     users   = conn.execute("SELECT COUNT(DISTINCT owner_id) FROM listings").fetchone()[0]
     msgs    = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
     conn.close()
+    
+    admin_panel_text = {
+        "bg": f"🔧 *Админ-панель ParkPlace Varna*\n\n📋 Обяви: *{total}* (активни: {active})\n👥 Потребители: *{users}* · ✉️ Съобщения: *{msgs}*",
+        "ru": f"🔧 *Админ-панель ParkPlace Varna*\n\n📋 Объявления: *{total}* (активных: {active})\n👥 Пользователи: *{users}* · ✉️ Сообщений: *{msgs}*"
+    }
+    
     await update.message.reply_text(
-        f"🔧 *Админ-панель ParkPlace Varna*\n\n"
-        f"📋 Обяви: *{total}* (активных: {active})\n"
-        f"👥 Потребители: *{users}* · ✉️ Сообщений: *{msgs}*",
-        parse_mode="Markdown", reply_markup=admin_keyboard()
+        admin_panel_text.get(lang, admin_panel_text["bg"]),
+        parse_mode="Markdown", reply_markup=admin_keyboard(lang)
     )
     return ADMIN_MENU
 
@@ -2376,17 +2413,24 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return ADMIN_MENU
 
     elif data == "adm_menu":
+        user_id = query.from_user.id
+        lang = get_user_lang(user_id, ctx)
+        
         conn   = db()
         total  = conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
         active = conn.execute("SELECT COUNT(*) FROM listings WHERE active=1").fetchone()[0]
         users  = conn.execute("SELECT COUNT(DISTINCT owner_id) FROM listings").fetchone()[0]
         msgs   = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
         conn.close()
+        
+        admin_menu_text = {
+            "bg": f"🔧 *Админ-панель*\n\n📋 Обяви: {total} (активни: {active})\n👥 Потребители: {users} · ✉️ Съобщения: {msgs}",
+            "ru": f"🔧 *Админ-панель*\n\n📋 Объявления: {total} (активных: {active})\n👥 Пользователи: {users} · ✉️ Сообщений: {msgs}"
+        }
+        
         await query.edit_message_text(
-            f"🔧 *Админ-панель*\n\n"
-            f"📋 Обяви: {total} (активных: {active})\n"
-            f"👥 Потребители: {users} · ✉️ Сообщений: {msgs}",
-            parse_mode="Markdown", reply_markup=admin_keyboard()
+            admin_menu_text.get(lang, admin_menu_text["bg"]),
+            parse_mode="Markdown", reply_markup=admin_keyboard(lang)
         )
         return ADMIN_MENU
 
