@@ -2857,6 +2857,7 @@ async def show_favorites(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Показать избранное пользователя."""
     query = update.callback_query if update.callback_query else None
     user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
 
     if query:
         await query.answer()
