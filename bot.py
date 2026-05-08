@@ -198,10 +198,17 @@ def haversine(lat1, lon1, lat2, lon2):
     a = math.sin(math.radians(lat2-lat1)/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(math.radians(lon2-lon1)/2)**2
     return 2*R*math.asin(math.sqrt(a))
 
-def fmt_dist(m):
-    if m < 1000: return f"{round(m/10)*10:.0f} м от вас"
-    elif m < 10000: return f"{m/1000:.1f} км от вас"
-    else: return f"{m/1000:.0f} км от вас"
+def fmt_dist(m, lang='bg'):
+    from_you = {"bg": "от вас", "ru": "от вас"}
+    m_unit = {"bg": "м", "ru": "м"}
+    km_unit = {"bg": "км", "ru": "км"}
+    
+    if m < 1000: 
+        return f"{round(m/10)*10:.0f} {m_unit[lang]} {from_you[lang]}"
+    elif m < 10000: 
+        return f"{m/1000:.1f} {km_unit[lang]} {from_you[lang]}"
+    else: 
+        return f"{m/1000:.0f} {km_unit[lang]} {from_you[lang]}"
 
 # ── Лейблы ────────────────────────────────────────────────────
 # Функции локализации
@@ -244,7 +251,7 @@ def listing_text(row, distance_m=None, lang="bg"):
     lines = [f"{get_action_label(action, lang)} · {get_type_label(ltype, lang)}"]
     
     if distance_m is not None:
-        lines.append(f"📏 *{fmt_dist(distance_m)}*")
+        lines.append(f"📏 *{fmt_dist(distance_m, lang)}*")
     
     lines.append(f"📍 {address}")
     
@@ -1502,9 +1509,9 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             t("search_no_results", lang, radius=rl),
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔔 Абонамент за известия (⭐100 ≈ 2€)", callback_data="subscribe")],
-                [InlineKeyboardButton("🔄 Промяна на радиус", callback_data="change_radius")],
-                [InlineKeyboardButton("🏠 Начало",      callback_data="go_home")],
+                [InlineKeyboardButton(t("btn_subscribe_notif", lang), callback_data="subscribe")],
+                [InlineKeyboardButton(t("btn_change_radius", lang), callback_data="change_radius")],
+                [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")],
             ])
         )
         from telegram import ReplyKeyboardRemove
@@ -1879,10 +1886,12 @@ async def handle_successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TY
 
     
     logger.info(f"Payment successful: {payment.telegram_payment_charge_id} from user {user_id}")
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id)
     
     params = ctx.user_data.get("pending_subscription")
     if not params:
-        await update.message.reply_text("❌ Грешка: параметри не са намерени.")
+        await update.message.reply_text(t("error_params_lost", lang))
         return
 
     # Создаём подписку
