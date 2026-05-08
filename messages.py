@@ -112,11 +112,30 @@ def set_user_lang(user_id, lang, ctx=None):
     except Exception as e: print(f"set_user_lang error: {e}")
 
 def detect_telegram_lang(update):
+    """Определяет язык пользователя по настройкам Telegram.
+    
+    Приоритет:
+    1. language_code пользователя (ru -> русский, bg -> болгарский)
+    2. Если не ru и не bg - возвращаем болгарский как язык по умолчанию
+    """
     try:
         code = update.effective_user.language_code or ""
-        if code.lower().startswith("ru"): return "ru"
-    except: pass
+        code_lower = code.lower()
+        
+        # Если язык русский - возвращаем ru
+        if code_lower.startswith("ru"):
+            return "ru"
+        
+        # Если язык болгарский - возвращаем bg
+        if code_lower.startswith("bg"):
+            return "bg"
+        
+    except Exception as e:
+        print(f"detect_telegram_lang error: {e}")
+    
+    # По умолчанию - болгарский (так как бот для Варны, Болгария)
     return "bg"
+
 
 
 # Дополнительные переводы
