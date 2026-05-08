@@ -244,6 +244,9 @@ BG.update({
     "price_invalid": "❌ Въведете число, например: 5000",
     "desc_updated": "✅ Описанието е обновено!",
     "photos_updated": "✅ Снимките са обновени!",
+    "btn_subscribe_notif": "🔔 Абонамент за известия (⭐100 ≈ 2€)",
+    "btn_change_radius": "🔄 Промяна на радиус",
+    "error_params_lost": "❌ Грешка: параметри не са намерени.",
     "choose_action": "Какво искате да направите?",
 })
 
@@ -352,5 +355,8 @@ RU.update({
     "price_invalid": "❌ Введите число, например: 5000",
     "desc_updated": "✅ Описание обновлено!",
     "photos_updated": "✅ Фото обновлены!",
+    "btn_subscribe_notif": "🔔 Подписка на уведомления (⭐100 ≈ 2€)",
+    "btn_change_radius": "🔄 Изменить радиус",
+    "error_params_lost": "❌ Ошибка: параметры не найдены.",
     "choose_action": "Что вы хотите сделать?",
 })
