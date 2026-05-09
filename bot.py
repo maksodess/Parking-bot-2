@@ -152,6 +152,7 @@ def init_db():
 
 # ── Геокодинг ─────────────────────────────────────────────────
 _geocode_cache: dict = {}
+_reverse_geocode_cache: dict = {}  # Кэш адресов на разных языках
 _geocode_lock = asyncio.Lock() if False else None  # инициализируем в runtime
 
 async def geocode(address: str, lang: str = "ru_RU"):
@@ -292,6 +293,45 @@ async def reverse_geocode(lat: float, lon: float, lang: str = "ru_RU"):
     
     return None
 
+
+async def get_address_for_user(lat: float, lon: float, stored_address: str, lang: str = "ru_RU") -> str:
+    """
+    Получает адрес на языке пользователя с кэшированием.
+    
+    Сначала пробует reverse geocoding на нужном языке.
+    Если не получается - возвращает сохранённый адрес из БД.
+    
+    Args:
+        lat: Широта
+        lon: Долгота
+        stored_address: Адрес из БД (fallback)
+        lang: Язык пользователя (ru_RU или bg_BG)
+    
+    Returns:
+        str: Адрес на языке пользователя
+    """
+    if not lat or not lon:
+        return stored_address
+    
+    # Проверяем кэш (ключ: координаты + язык)
+    cache_key = f"{lat:.6f}_{lon:.6f}_{lang}"
+    if cache_key in _reverse_geocode_cache:
+        logger.debug(f"Address cache HIT for {lat:.6f}, {lon:.6f} ({lang})")
+        return _reverse_geocode_cache[cache_key]
+    
+    # Пробуем получить адрес на языке пользователя
+    try:
+        address = await reverse_geocode(lat, lon, lang)
+        if address:
+            _reverse_geocode_cache[cache_key] = address
+            logger.info(f"Address translated to {lang}: {stored_address} → {address}")
+            return address
+    except Exception as e:
+        logger.warning(f"Failed to get address in user language {lang}: {e}")
+    
+    # Fallback на сохранённый адрес
+    return stored_address
+
 # ── Haversine ─────────────────────────────────────────────────
 def haversine(lat1, lon1, lat2, lon2):
     R = 6_371_000
@@ -335,15 +375,29 @@ def has_purchased_contacts(buyer_id: int, listing_id: int) -> bool:
     conn.close()
     return result is not None
 
-def listing_text(row, distance_m=None, lang="bg"):
-    """Формирует текст обявиения (все контакты видны всем)."""
+async def listing_text(row, distance_m=None, lang="bg", translate_address=False):
+    """
+    Формирует текст объявления.
+    
+    Args:
+        row: Строка из БД с объявлением
+        distance_m: Расстояние в метрах (опционально)
+        lang: Язык пользователя
+        translate_address: Переводить ли адрес через reverse geocoding на язык пользователя
+    """
     lid, owner_id, owner_name, action, ltype, address, phone, lat, lon, price, desc, photo, active, created, confirmed_at, views = row
     lines = [f"{get_action_label(action, lang)} · {get_type_label(ltype, lang)}"]
     
     if distance_m is not None:
         lines.append(f"📏 *{fmt_dist(distance_m, lang)}*")
     
-    lines.append(f"📍 {address}")
+    # Динамический адрес на языке пользователя
+    if translate_address and lat and lon:
+        yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
+        user_address = await get_address_for_user(lat, lon, address, yandex_lang)
+        lines.append(f"📍 {user_address}")
+    else:
+        lines.append(f"📍 {address}")
     
     if phone:
         lines.append(f"📞 {phone}")
@@ -1251,7 +1305,8 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
             else:
                 notification_text = t("notify_listing_updated", lang, lid=listing_id)
             
-            caption = listing_text(listing, lang=lang)
+            # Динамический адрес для подписчиков избранного
+            caption = await listing_text(listing, lang=lang, translate_address=True)
             full_message = f"{t('notify_fav_updated', lang)}\n\n{notification_text}\n\n{'─'*30}\n\n{caption}"
             
             buttons = [
@@ -1365,6 +1420,9 @@ async def notify_subscribers(ctx, listing_id: int, action: str, ltype: str, lat:
     
     notified = 0
     for user_id, stype, sub_lat, sub_lon, radius, max_price in subscriptions:
+        # Получаем язык подписчика
+        lang = get_user_lang(user_id, ctx)
+        
         # Проверяем радиус
         dist = haversine(sub_lat, sub_lon, lat, lon)
         if dist > radius:
@@ -1378,7 +1436,8 @@ async def notify_subscribers(ctx, listing_id: int, action: str, ltype: str, lat:
         try:
             owner_id = listing[1]
             photo_id = listing[11]
-            caption = listing_text(listing, distance_m=dist)
+            # Динамический адрес на языке подписчика
+            caption = await listing_text(listing, distance_m=dist, lang=lang, translate_address=True)
             notification = f"🔔 *Новое обявиение по вашей подписке!*\n\n{caption}"
             
             # Простая кнопка "На карте"
@@ -1700,7 +1759,8 @@ async def show_search_page(message, ctx, page=0):
     for item in page_listings:
         dist, row = item if item[0] is not None else (None, item[1])
         lid = row[0]
-        caption = listing_text(row, distance_m=dist)
+        # Динамический адрес на языке пользователя
+        caption = await listing_text(row, distance_m=dist, lang=lang, translate_address=True)
         logger.info(f"Sending listing {lid} to user {viewer_id}")
 
         conn = db()
@@ -1890,7 +1950,8 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
                 user_id = update.effective_user.id
                 lang = get_user_lang(user_id, ctx)
                 
-                caption = listing_text(row, lang=lang)
+                # Динамический адрес для покупателя контактов
+                caption = await listing_text(row, lang=lang, translate_address=True)
                 keyboard = InlineKeyboardMarkup([
                     [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{lid}")],
                 ])
@@ -2154,7 +2215,8 @@ async def show_my_listings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     for row in rows:
         lid, active = row[0], row[12]
         status  = t("listing_status_active", lang) if active else t("listing_status_inactive", lang)
-        caption = listing_text(row, lang=lang) + f"\n{status}"
+        # Показываем адрес на языке владельца (translate_address=False для своих объявлений)
+        caption = await listing_text(row, lang=lang, translate_address=False) + f"\n{status}"
         btns = [
             [InlineKeyboardButton(t("btn_edit", lang), callback_data=f"edit_{lid}"),
              InlineKeyboardButton(t("btn_delete", lang), callback_data=f"delete_{lid}")],
@@ -2742,7 +2804,8 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         # Отправляем фото и текст
         photos = get_photos(listing)
-        caption = listing_text(listing, lang=lang)
+        # Админ видит адрес как есть (без перевода)
+        caption = await listing_text(listing, lang=lang, translate_address=False)
         
         logger.info(f"Photos: {len(photos) if photos else 0}")
         
@@ -3021,7 +3084,8 @@ async def show_my_listings_page(message, ctx, page=0):
     # Отправляем объявления
     for row in page_listings:
         lid, active = row[0], row[12]
-        caption = listing_text(row, lang=lang)
+        # Свои объявления - адрес на языке владельца
+        caption = await listing_text(row, lang=lang, translate_address=False)
         status = t("listing_status_active", lang) if active else t("listing_status_inactive", lang)
         buttons = [
             [InlineKeyboardButton(t("btn_edit", lang), callback_data=f"edit_{lid}"),
@@ -3212,7 +3276,8 @@ async def show_favorites_page(message, ctx, page=0):
     
     for row in page_listings:
         lid = row[0]
-        caption = listing_text(row, lang=lang)
+        # Избранное - показываем адрес на языке СМОТРЯЩЕГО (translate_address=True)
+        caption = await listing_text(row, lang=lang, translate_address=True)
         buttons = [
             [InlineKeyboardButton(t("btn_remove_fav", lang), callback_data=f"unfav_{lid}")],
             [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{lid}")],
