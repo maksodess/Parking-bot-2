@@ -1101,6 +1101,7 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
     if not listing or not favorites_users:
         conn.close()
         return
+        return
     
     # Отправляем уведомления с полным объявлением
     photos = get_photos(listing)
@@ -1766,18 +1767,29 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
             conn.close()
             
             if row:
-                caption = listing_text(row)
+                user_id = update.effective_user.id
+                lang = get_user_lang(user_id, ctx)
+                
+                caption = listing_text(row, lang=lang)
                 keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{lid}")],
+                    [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{lid}")],
                 ])
                 
+                payment_success_text = {"bg": "✅ *Плащането е успешно!* (⭐ {stars} Stars)\n\n{caption}",
+                                       "ru": "✅ *Оплата прошла успешно!* (⭐ {stars} Stars)\n\n{caption}"}
+                
                 await update.message.reply_text(
-                    f"✅ *Плащането е успешно!* (⭐ {price_stars} Stars)\n\n{caption}",
+                    payment_success_text[lang].format(stars=price_stars, caption=caption),
                     parse_mode="Markdown",
                     reply_markup=keyboard
                 )
             else:
-                await update.message.reply_text("✅ Оплата прошла, но обявиение не е намерено.")
+                user_id = update.effective_user.id
+                lang = get_user_lang(user_id, ctx)
+                
+                payment_success_no_listing = {"bg": "✅ Оплата прошла, но обявиение не е намерено.",
+                                              "ru": "✅ Оплата прошла, но объявление не найдено."}
+                await update.message.reply_text(payment_success_no_listing[lang])
         
         elif parts[0] == "subscription":
             # Обработка оплаты подписки
