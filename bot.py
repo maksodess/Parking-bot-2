@@ -151,39 +151,37 @@ def init_db():
     conn.close()
 
 # ── Геокодинг ─────────────────────────────────────────────────
-_geocode_cache: dict = {}
-_reverse_geocode_cache: dict = {}  # Кэш адресов на разных языках
+_geocode_cache: dict = {}  # Кэш для геокодинга адрес → координаты
 _geocode_lock = asyncio.Lock() if False else None  # инициализируем в runtime
 
-async def geocode(address: str, lang: str = "ru_RU"):
+async def geocode(address: str):
     """
     Асинхронный геокодинг через Yandex Geocoder API с кэшем.
+    Всегда использует болгарский язык для адресов в Варне.
     
     Args:
         address: Адрес для поиска
-        lang: Язык ответа (ru_RU, bg_BG, en_US)
     
     Returns:
         tuple: (latitude, longitude, formatted_address) или None
     """
     # Проверяем кэш
-    cache_key = f"{address}_{lang}"
-    if cache_key in _geocode_cache:
-        return _geocode_cache[cache_key]
+    if address in _geocode_cache:
+        return _geocode_cache[address]
     
     if not YANDEX_API_KEY:
         logger.error("YANDEX_GEOCODER_API_KEY not set!")
         return None
     
     # Добавляем "Варна" для лучшей точности
-    search_query = f"{address}, Варна, Болгария" if "варна" not in address.lower() and "varna" not in address.lower() else address
+    search_query = f"{address}, Варна, България" if "варна" not in address.lower() and "varna" not in address.lower() else address
     
     params = {
         "apikey": YANDEX_API_KEY,
         "geocode": search_query,
         "format": "json",
         "results": 1,
-        "lang": lang,
+        "lang": "bg_BG",  # ВСЕГДА болгарский
         "kind": "house"
     }
     
@@ -214,14 +212,17 @@ async def geocode(address: str, lang: str = "ru_RU"):
                 # Форматированный адрес
                 formatted = geo_object["metaDataProperty"]["GeocoderMetaData"]["text"]
                 
-                # Убираем "Болгария, " для компактности
-                if formatted.startswith("Болгария, "):
+                # Убираем "България, " для компактности
+                if formatted.startswith("България, "):
                     formatted = formatted[10:]
                 
-                result = (latitude, longitude, formatted)
-                _geocode_cache[cache_key] = result
+                # Очистка адреса
+                formatted = _clean_varna_address(formatted)
                 
-                logger.info(f"Geocoded via Yandex: '{address}' → {latitude:.6f}, {longitude:.6f}")
+                result = (latitude, longitude, formatted)
+                _geocode_cache[address] = result
+                
+                logger.info(f"Geocoded via Yandex (BG): '{address}' → {latitude:.6f}, {longitude:.6f}")
                 return result
                 
     except asyncio.TimeoutError:
@@ -231,18 +232,17 @@ async def geocode(address: str, lang: str = "ru_RU"):
     
     return None
 
-async def reverse_geocode(lat: float, lon: float, lang: str = "ru_RU"):
+async def reverse_geocode(lat: float, lon: float):
     """
     Асинхронный обратный геокодинг через Yandex Geocoder API.
-    Координаты → адрес.
+    Координаты → адрес. Всегда использует болгарский язык.
     
     Args:
         lat: Широта
         lon: Долгота
-        lang: Язык ответа (ru_RU, bg_BG)
     
     Returns:
-        str: Форматированный адрес или None
+        str: Форматированный адрес (болгарский) или None
     """
     if not YANDEX_API_KEY:
         logger.error("YANDEX_GEOCODER_API_KEY not set!")
@@ -254,7 +254,7 @@ async def reverse_geocode(lat: float, lon: float, lang: str = "ru_RU"):
         "geocode": f"{lon},{lat}",
         "format": "json",
         "results": 1,
-        "lang": lang,
+        "lang": "bg_BG",  # ВСЕГДА болгарский
         "kind": "house"
     }
     
@@ -279,11 +279,14 @@ async def reverse_geocode(lat: float, lon: float, lang: str = "ru_RU"):
                 geo_object = members[0]["GeoObject"]
                 address = geo_object["metaDataProperty"]["GeocoderMetaData"]["text"]
                 
-                # Убираем "Болгария, " из начала
-                if address.startswith("Болгария, "):
+                # Убираем "България, " из начала
+                if address.startswith("България, "):
                     address = address[10:]
                 
-                logger.info(f"Reverse geocoded via Yandex: {lat:.6f}, {lon:.6f} → '{address}'")
+                # Очистка адреса
+                address = _clean_varna_address(address)
+                
+                logger.info(f"Reverse geocoded via Yandex (BG): {lat:.6f}, {lon:.6f} → '{address}'")
                 return address
                 
     except asyncio.TimeoutError:
@@ -294,72 +297,55 @@ async def reverse_geocode(lat: float, lon: float, lang: str = "ru_RU"):
     return None
 
 
-async def get_address_for_user(lat: float, lon: float, stored_address: str, lang: str = "ru_RU") -> str:
+async def get_clean_address(lat: float, lon: float, stored_address: str) -> str:
     """
-    Получает адрес на языке пользователя с кэшированием.
+    Получает чистый болгарский адрес.
     
-    Сначала пробует reverse geocoding на нужном языке.
+    Сначала пробует reverse geocoding.
     Если не получается - возвращает сохранённый адрес из БД.
     
     Args:
         lat: Широта
         lon: Долгота
         stored_address: Адрес из БД (fallback)
-        lang: Язык пользователя (ru_RU или bg_BG)
     
     Returns:
-        str: Адрес на языке пользователя
+        str: Очищенный адрес (всегда болгарский)
     """
     if not lat or not lon:
         return stored_address
     
-    # Проверяем кэш (ключ: координаты + язык)
-    cache_key = f"{lat:.6f}_{lon:.6f}_{lang}"
-    if cache_key in _reverse_geocode_cache:
-        logger.debug(f"Address cache HIT for {lat:.6f}, {lon:.6f} ({lang})")
-        return _reverse_geocode_cache[cache_key]
-    
-    # Пробуем получить адрес на языке пользователя
+    # Пробуем получить адрес через reverse geocoding
     try:
-        address = await reverse_geocode(lat, lon, lang)
+        address = await reverse_geocode(lat, lon)
         if address:
-            # Очистка адреса от избыточной информации для Варны
-            address = _clean_varna_address(address)
-            
-            _reverse_geocode_cache[cache_key] = address
-            logger.info(f"Address translated to {lang}: {stored_address} → {address}")
+            logger.info(f"Address cleaned: {stored_address} → {address}")
             return address
     except Exception as e:
-        logger.warning(f"Failed to get address in user language {lang}: {e}")
+        logger.warning(f"Failed to get clean address: {e}")
     
-    # Fallback на сохранённый адрес
-    return stored_address
+    # Fallback на сохранённый адрес (тоже очищаем)
+    return _clean_varna_address(stored_address)
 
 
 def _clean_varna_address(address: str) -> str:
     """
-    Убирает избыточную информацию из адресов в Варне.
+    Убирает избыточную информацию из болгарских адресов в Варне.
     
     Преобразует:
-    "область Варна, Община-"Варна", Варна, улица Зеленика, 22"
+    "област Варна, Община-"Варна", Варна, бульвар Васила Левского, 55"
     в:
-    "Варна, улица Зеленика, 22"
+    "Варна, бульвар Васила Левского, 55"
     """
     if not address:
         return address
     
-    # Список префиксов для удаления
+    # Список префиксов для удаления (только болгарские)
     prefixes_to_remove = [
-        "Болгария, область Варна, Община-\"Варна\", ",
         "България, област Варна, Община-\"Варна\", ",
-        "область Варна, Община-\"Варна\", ",
         "област Варна, Община-\"Варна\", ",
-        "Болгария, област Варна, ",
         "България, област Варна, ",
-        "Болгария, область Варна, ",
-        "область Варна, ",
         "област Варна, ",
-        "Болгария, ",
         "България, ",
     ]
     
@@ -414,15 +400,15 @@ def has_purchased_contacts(buyer_id: int, listing_id: int) -> bool:
     conn.close()
     return result is not None
 
-async def listing_text(row, distance_m=None, lang="bg", translate_address=False):
+async def listing_text(row, distance_m=None, lang="bg"):
     """
     Формирует текст объявления.
+    Адрес всегда показывается на болгарском (из БД, уже очищенный).
     
     Args:
         row: Строка из БД с объявлением
         distance_m: Расстояние в метрах (опционально)
-        lang: Язык пользователя
-        translate_address: Переводить ли адрес через reverse geocoding на язык пользователя
+        lang: Язык интерфейса (для меток, не для адреса)
     """
     lid, owner_id, owner_name, action, ltype, address, phone, lat, lon, price, desc, photo, active, created, confirmed_at, views = row
     lines = [f"{get_action_label(action, lang)} · {get_type_label(ltype, lang)}"]
@@ -430,13 +416,8 @@ async def listing_text(row, distance_m=None, lang="bg", translate_address=False)
     if distance_m is not None:
         lines.append(f"📏 *{fmt_dist(distance_m, lang)}*")
     
-    # Динамический адрес на языке пользователя
-    if translate_address and lat and lon:
-        yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
-        user_address = await get_address_for_user(lat, lon, address, yandex_lang)
-        lines.append(f"📍 {user_address}")
-    else:
-        lines.append(f"📍 {address}")
+    # Адрес всегда болгарский (как сохранено в БД)
+    lines.append(f"📍 {address}")
     
     if phone:
         lines.append(f"📞 {phone}")
@@ -916,7 +897,7 @@ async def ad_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     # Используем Yandex Geocoder с нужным языком
     yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
-    result = await geocode(address, yandex_lang)
+    result = await geocode(address)
     if not result:
         await update.message.reply_text(
             t("ad_not_found", lang),
@@ -1014,7 +995,7 @@ async def ad_location_geo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         # Используем Yandex reverse geocoding с нужным языком
         yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
-        addr = await reverse_geocode(loc.latitude, loc.longitude, yandex_lang)
+        addr = await reverse_geocode(loc.latitude, loc.longitude)
         if addr:
             ctx.user_data["ad"]["address"] = addr if isinstance(addr, str) else ", ".join(addr)
             msg = t("ad_geo_saved", lang) + f"\n📍 *{ctx.user_data['ad']['address']}*\n\n"
@@ -1345,7 +1326,7 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
                 notification_text = t("notify_listing_updated", lang, lid=listing_id)
             
             # Динамический адрес для подписчиков избранного
-            caption = await listing_text(listing, lang=lang, translate_address=True)
+            caption = await listing_text(listing, lang=lang)
             full_message = f"{t('notify_fav_updated', lang)}\n\n{notification_text}\n\n{'─'*30}\n\n{caption}"
             
             buttons = [
@@ -1476,7 +1457,7 @@ async def notify_subscribers(ctx, listing_id: int, action: str, ltype: str, lat:
             owner_id = listing[1]
             photo_id = listing[11]
             # Динамический адрес на языке подписчика
-            caption = await listing_text(listing, distance_m=dist, lang=lang, translate_address=True)
+            caption = await listing_text(listing, distance_m=dist, lang=lang)
             notification = f"🔔 *Новое обявиение по вашей подписке!*\n\n{caption}"
             
             # Простая кнопка "На карте"
@@ -1612,7 +1593,7 @@ async def search_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     # Используем Yandex Geocoder с нужным языком
     yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
-    result = await geocode(address, yandex_lang)
+    result = await geocode(address)
     if not result:
         await update.message.reply_text(
             t("search_not_found", lang)
@@ -1799,7 +1780,7 @@ async def show_search_page(message, ctx, page=0):
         dist, row = item if item[0] is not None else (None, item[1])
         lid = row[0]
         # Динамический адрес на языке пользователя
-        caption = await listing_text(row, distance_m=dist, lang=lang, translate_address=True)
+        caption = await listing_text(row, distance_m=dist, lang=lang)
         logger.info(f"Sending listing {lid} to user {viewer_id}")
 
         conn = db()
@@ -1900,7 +1881,7 @@ async def show_map(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         # Показываем адрес на языке пользователя (как в объявлении)
         yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
-        user_address = await get_address_for_user(lat, lon, stored_address, yandex_lang)
+        user_address = await get_clean_address(lat, lon, stored_address)
         
         await query.message.reply_location(latitude=lat, longitude=lon)
         await query.message.reply_text(f"📍 {user_address}")
@@ -2003,7 +1984,7 @@ async def successful_payment_callback(update: Update, ctx: ContextTypes.DEFAULT_
                 lang = get_user_lang(user_id, ctx)
                 
                 # Динамический адрес для покупателя контактов
-                caption = await listing_text(row, lang=lang, translate_address=True)
+                caption = await listing_text(row, lang=lang)
                 keyboard = InlineKeyboardMarkup([
                     [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{lid}")],
                 ])
@@ -2268,7 +2249,7 @@ async def show_my_listings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lid, active = row[0], row[12]
         status  = t("listing_status_active", lang) if active else t("listing_status_inactive", lang)
         # Показываем адрес на языке владельца (translate_address=False для своих объявлений)
-        caption = await listing_text(row, lang=lang, translate_address=False) + f"\n{status}"
+        caption = await listing_text(row, lang=lang) + f"\n{status}"
         btns = [
             [InlineKeyboardButton(t("btn_edit", lang), callback_data=f"edit_{lid}"),
              InlineKeyboardButton(t("btn_delete", lang), callback_data=f"delete_{lid}")],
@@ -2465,7 +2446,7 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if field == "address":
         # Используем Yandex Geocoder с нужным языком
         yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
-        result = await geocode(text, yandex_lang)
+        result = await geocode(text)
         if result:
             lat, lon, display = result
             conn.execute("UPDATE listings SET address=?, lat=?, lon=? WHERE id=?", (display, lat, lon, lid))
@@ -2650,7 +2631,7 @@ async def show_map(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     # Показываем адрес на языке пользователя (как в объявлении)
     yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
-    user_address = await get_address_for_user(lat, lon, stored_address, yandex_lang)
+    user_address = await get_clean_address(lat, lon, stored_address)
     
     await query.message.reply_location(latitude=lat, longitude=lon)
     await query.message.reply_text(f"📍 {user_address}")
@@ -2669,7 +2650,7 @@ async def fix_addresses_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         looks_like_coords = bool(re.match(r'^-?\d+\.\d+,\s*-?\d+\.\d+$', addr or ''))
         if looks_like_coords:
             # Используем Yandex reverse geocoding (по умолчанию русский)
-            new_addr = await reverse_geocode(lat, lon, "ru_RU")
+            new_addr = await reverse_geocode(lat, lon)
             if new_addr:
                 new_addr_str = new_addr if isinstance(new_addr, str) else ", ".join(new_addr)
                 conn.execute("UPDATE listings SET address=? WHERE id=?", (new_addr_str, lid))
@@ -2869,7 +2850,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Отправляем фото и текст
         photos = get_photos(listing)
         # Админ видит адрес как есть (без перевода)
-        caption = await listing_text(listing, lang=lang, translate_address=False)
+        caption = await listing_text(listing, lang=lang)
         
         logger.info(f"Photos: {len(photos) if photos else 0}")
         
@@ -3149,7 +3130,7 @@ async def show_my_listings_page(message, ctx, page=0):
     for row in page_listings:
         lid, active = row[0], row[12]
         # Свои объявления - адрес на языке владельца
-        caption = await listing_text(row, lang=lang, translate_address=False)
+        caption = await listing_text(row, lang=lang)
         status = t("listing_status_active", lang) if active else t("listing_status_inactive", lang)
         buttons = [
             [InlineKeyboardButton(t("btn_edit", lang), callback_data=f"edit_{lid}"),
@@ -3341,7 +3322,7 @@ async def show_favorites_page(message, ctx, page=0):
     for row in page_listings:
         lid = row[0]
         # Избранное - показываем адрес на языке СМОТРЯЩЕГО (translate_address=True)
-        caption = await listing_text(row, lang=lang, translate_address=True)
+        caption = await listing_text(row, lang=lang)
         buttons = [
             [InlineKeyboardButton(t("btn_remove_fav", lang), callback_data=f"unfav_{lid}")],
             [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{lid}")],
