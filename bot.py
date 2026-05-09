@@ -1087,6 +1087,8 @@ async def ad_edit_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, new_value):
     """Уведомляет пользователей, у которых объявление в избранном, об изменениях."""
+    logger.info(f"notify_favorites_changes called: listing_id={listing_id}, field={field}")
+    
     conn = db()
     
     # Находим всех пользователей, у которых это объявление в избранном
@@ -1095,10 +1097,13 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
         (listing_id,)
     ).fetchall()
     
+    logger.info(f"Found {len(favorites_users)} users with this listing in favorites")
+    
     # Получаем информацию об объявлении
     listing = conn.execute("SELECT * FROM listings WHERE id=?", (listing_id,)).fetchone()
     
     if not listing or not favorites_users:
+        logger.info(f"No listing or no favorites_users, returning. listing={listing is not None}, users={len(favorites_users)}")
         conn.close()
         return
     
@@ -1110,6 +1115,8 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
             # Получаем язык каждого пользователя напрямую из БД
             user_lang_row = conn.execute("SELECT lang FROM users WHERE user_id=?", (user_id,)).fetchone()
             lang = user_lang_row[0] if user_lang_row and user_lang_row[0] else "bg"
+            
+            logger.info(f"Sending notification to user {user_id} in {lang}")
             
             # Формируем сообщение об изменении на языке пользователя
             if field == "price":
@@ -1177,6 +1184,7 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
             
             # Rate limiting
             await asyncio.sleep(0.05)
+            logger.info(f"Successfully sent notification to user {user_id}")
         except Exception as e:
             logger.error(f"Failed to notify favorites user {user_id}: {e}", exc_info=True)
     
