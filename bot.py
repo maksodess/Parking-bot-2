@@ -1519,6 +1519,9 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"Search results: {len(results)} with geo, {len(no_geo)} without geo")
     
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     # Сохраняем результаты поиска для пагинации
     ctx.user_data["search_results"] = results
     ctx.user_data["search_no_geo"] = no_geo
@@ -1526,7 +1529,7 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     from telegram import ReplyKeyboardRemove
     await query.edit_message_text(
-        f"🔍 Намерени *{total}* обяви · радиус: {rl}",
+        t("search_found", lang, count=total, radius=rl),
         parse_mode="Markdown"
     )
 
@@ -1544,6 +1547,9 @@ async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def show_search_page(message, ctx, page=0):
     """Показывает страницу результатов поиска (5 объявлений)."""
+    user_id = message.chat.id
+    lang = get_user_lang(user_id, ctx)
+    
     ITEMS_PER_PAGE = 5
     
     results = ctx.user_data.get("search_results", [])
@@ -2756,6 +2762,9 @@ async def cmd_my(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def show_my_listings_page(message, ctx, page=0):
     """Показывает страницу своих объявлений (5 штук)."""
+    user_id = message.chat.id
+    lang = get_user_lang(user_id, ctx)
+    
     ITEMS_PER_PAGE = 5
     
     rows = ctx.user_data.get("my_listings", [])
