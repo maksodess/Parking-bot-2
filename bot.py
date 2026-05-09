@@ -37,6 +37,20 @@ PAGE_SIZE  = 10
 MAX_LISTINGS_PER_USER = 15  # Лимит объявлений для обычных пользователей (админ - безлимит)
 PHONE_RE   = re.compile(r'^\+?[0-9]{7,15}$')
 
+# ── Константы для отображения меток ────────────────────────────
+ACTION_LABEL = {
+    'buy': '🛒 Купува/Купить',
+    'sell': '💰 Продава/Продать',
+    'rent': '🔑 Наем/Аренда',
+    'lease': '📋 Под наем/Сдать'
+}
+
+TYPE_LABEL = {
+    'parking': '🅿️ Паркомясто',
+    'garage': '🚘 Гараж',
+    'all': '📋 Всичко/Всё'
+}
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -1937,20 +1951,16 @@ async def handle_successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TY
         )
 
     radius_text = f"{params['radius']//1000} км" if params['radius'] >= 1000 else f"{params['radius']} м"
-    
-    user_id = update.effective_user.id
-    lang = get_user_lang(user_id, ctx)
-    
-    type_text   = get_type_label(params["search_type"], lang)
-    action_text = get_action_label(params["action"], lang)
-    
-    sub_created_text = {
-        "bg": f"✅ *Плащането е успешно!*\n\n🔔 *Абонаментът е активиран:*\n• {action_text} · {type_text}\n• Радиус: {radius_text}\n• Валиден: 30 дни\n\nЩе получавате известия за нови обяви!",
-        "ru": f"✅ *Оплата прошла успешно!*\n\n🔔 *Подписка активирована:*\n• {action_text} · {type_text}\n• Радиус: {radius_text}\n• Действует: 30 дней\n\nВы будете получать уведомления о новых объявлениях!"
-    }
+    type_text   = TYPE_LABEL.get(params["search_type"], params["search_type"])
+    action_text = ACTION_LABEL.get(params["action"], params["action"])
 
     await update.message.reply_text(
-        sub_created_text[lang],
+        f"✅ *Плащането е успешно!*\n\n"
+        f"🔔 *Абонаментът е активиран:*\n"
+        f"• {action_text} · {type_text}\n"
+        f"• Радиус: {radius_text}\n"
+        f"• Валиден: 30 дни\n\n"
+        f"Ще получавате известия за нови обяви!",
         parse_mode="Markdown",
         reply_markup=home_ikb()
     )
@@ -2101,28 +2111,11 @@ async def manage_listing(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.execute("DELETE FROM listings WHERE id=?", (lid,))
         conn.commit()
         conn.close()
-        
-        deleted_text = {"bg": "🗑 Обявата е изтрита", "ru": "🗑 Объявление удалено"}
-        await query.answer(deleted_text[lang], show_alert=True)
-        
-        chat_id = query.message.chat_id
-        text_msg_id = query.message.message_id
-        
-        # Удаляем текстовое сообщение
+        await query.answer("🗑 Изтрито", show_alert=True)
         try:
             await query.message.delete()
         except Exception as e:
-            logger.warning(f"Could not delete text message: {e}")
-        
-        # Пробуем удалить до 6 предыдущих сообщений (media group может содержать до 5 фото)
-        # Идём от текущего message_id вниз
-        for offset in range(1, 7):
-            try:
-                await ctx.bot.delete_message(chat_id=chat_id, message_id=text_msg_id - offset)
-            except Exception:
-                # Сообщение не существует или не принадлежит боту - пропускаем
-                break
-        
+            logger.warning(f"Could not delete message after listing deletion: {e}")
         return MAIN_MENU
 
     conn.close()
@@ -2466,6 +2459,8 @@ async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     lang = get_user_lang(user_id, ctx)
     
+    logger.info(f"Admin command called by user {user_id}")
+    
     if user_id != ADMIN_ID:
         no_access_text = {"bg": "❌ Няма достъп.", "ru": "❌ Нет доступа."}
         await update.message.reply_text(no_access_text.get(lang, no_access_text["bg"]))
@@ -2486,40 +2481,41 @@ async def admin_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         admin_panel_text.get(lang, admin_panel_text["bg"]),
         parse_mode="Markdown", reply_markup=admin_keyboard(lang)
     )
+    logger.info(f"Admin panel displayed, returning ADMIN_MENU state")
     return ADMIN_MENU
 
 async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    logger.info(f"Admin callback triggered with data: {query.data}")
+    
     if query.from_user.id != ADMIN_ID:
         await query.answer("❌ Няма достъп", show_alert=True)
         return ADMIN_MENU
+    
+    await query.answer()
     data = query.data
+    logger.info(f"Processing admin action: {data}")
 
     if data.startswith("adm_listings_"):
+        logger.info(f"Handling adm_listings: {data}")
         page  = int(data.replace("adm_listings_", ""))
+        logger.info(f"Page number: {page}")
         ctx.user_data["adm_page"] = page
-        
-        user_id = query.from_user.id
-        lang = get_user_lang(user_id, ctx)
-        
         conn  = db()
         total = conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
+        logger.info(f"Total listings in DB: {total}")
         rows  = conn.execute(
             "SELECT id,owner_name,action,type,address,price,active FROM listings ORDER BY id DESC LIMIT ? OFFSET ?",
             (PAGE_SIZE, page * PAGE_SIZE)
         ).fetchall()
+        logger.info(f"Retrieved {len(rows)} rows for page {page}")
         conn.close()
 
         pages = math.ceil(total / PAGE_SIZE) or 1
-        
-        listings_header = {"bg": f"📋 *Обяви* (стр. {page+1}/{pages} · всего {total}):\n\n",
-                          "ru": f"📋 *Объявления* (стр. {page+1}/{pages} · всего {total}):\n\n"}
-        text = listings_header[lang]
-        
+        text  = f"📋 *Объявления* (стр. {page+1}/{pages} · всего {total}):\n\n"
         for lid, oname, action, ltype, addr, price, act in rows:
             s = "✅" if act else "⏸"
-            text += f"{s} *#{lid}* · {get_action_label(action, lang)} · {get_type_label(ltype, lang)}\n"
+            text += f"{s} *#{lid}* · {ACTION_LABEL.get(action,action)} · {TYPE_LABEL.get(ltype,ltype)}\n"
             text += f"   📍 {addr or '—'} · 💰 {price:,.0f}€ · 👤 {oname or '—'}\n\n"
 
         btns = []
@@ -2534,7 +2530,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if (page+1)*PAGE_SIZE < total:
             nav.append(InlineKeyboardButton("▶️", callback_data=f"adm_listings_{page+1}"))
         if nav: btns.append(nav)
-        btns.append([InlineKeyboardButton(t("btn_back_menu", lang), callback_data="adm_menu")])
+        btns.append([InlineKeyboardButton("↩️ В меню", callback_data="adm_menu")])
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(btns))
         return ADMIN_MENU
 
@@ -2685,16 +2681,11 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Уведомляем подписчиков избранного перед удалением
         await notify_favorites_deleted(ctx.bot, lid)
         
-        user_id = query.from_user.id
-        lang = get_user_lang(user_id, ctx)
-        
         conn = db()
         conn.execute("DELETE FROM listings WHERE id=?", (lid,))
         conn.commit()
         conn.close()
-        
-        deleted_msg = {"bg": f"🗑 #{lid} изтрито", "ru": f"🗑 #{lid} удалено"}
-        await query.answer(deleted_msg[lang])
+        await query.answer(f"🗑 #{lid} удалено")
         
         # Показываем обновленный список (вместо изменения query.data)
         ctx.user_data["adm_page"] = page
@@ -2707,14 +2698,10 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
 
         pages = math.ceil(total / PAGE_SIZE) or 1
-        
-        listings_header = {"bg": f"📋 *Обяви* (стр. {page+1}/{pages} · всего {total}):\n\n",
-                          "ru": f"📋 *Объявления* (стр. {page+1}/{pages} · всего {total}):\n\n"}
-        text = listings_header[lang]
-        
+        text  = f"📋 *Объявления* (стр. {page+1}/{pages} · всего {total}):\n\n"
         for lid, oname, action, ltype, addr, price, act in rows:
             s = "✅" if act else "⏸"
-            text += f"{s} *#{lid}* · {get_action_label(action, lang)} · {get_type_label(ltype, lang)}\n"
+            text += f"{s} *#{lid}* · {ACTION_LABEL.get(action,action)} · {TYPE_LABEL.get(ltype,ltype)}\n"
             text += f"   📍 {addr or '—'} · 💰 {price:,.0f}€ · 👤 {oname or '—'}\n\n"
 
         btns = []
@@ -2729,7 +2716,7 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if (page+1)*PAGE_SIZE < total:
             nav.append(InlineKeyboardButton("▶️", callback_data=f"adm_listings_{page+1}"))
         if nav: btns.append(nav)
-        btns.append([InlineKeyboardButton(t("btn_back_menu", lang), callback_data="adm_menu")])
+        btns.append([InlineKeyboardButton("↩️ В меню", callback_data="adm_menu")])
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(btns))
         return ADMIN_MENU
 
