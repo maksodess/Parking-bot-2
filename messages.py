@@ -1,7 +1,7 @@
 # messages.py — Полная локализация ParkPlace Varna Bot (БГ/РУ)
 import sqlite3, os
 
-DATA_DIR = os.environ.get("DATA_DIR", "./data")
+DATA_DIR = os.environ.get("DATA_DIR", "/data")
 DB_FILE = os.path.join(DATA_DIR, "parking.db")
 
 def _db():
