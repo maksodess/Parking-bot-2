@@ -1091,9 +1091,12 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
     
     conn = db()
     
-    # Находим всех пользователей, у которых это объявление в избранном
+    # Находим всех пользователей, у которых это объявление в избранном + их языки
     favorites_users = conn.execute(
-        "SELECT user_id FROM favorites WHERE listing_id=?",
+        """SELECT f.user_id, COALESCE(u.lang, 'bg') as lang
+           FROM favorites f
+           LEFT JOIN users u ON f.user_id = u.user_id
+           WHERE f.listing_id=?""",
         (listing_id,)
     ).fetchall()
     
@@ -1110,12 +1113,8 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
     # Отправляем уведомления с полным объявлением
     photos = get_photos(listing)
     
-    for (user_id,) in favorites_users:
+    for (user_id, lang) in favorites_users:
         try:
-            # Получаем язык каждого пользователя напрямую из БД
-            user_lang_row = conn.execute("SELECT lang FROM users WHERE user_id=?", (user_id,)).fetchone()
-            lang = user_lang_row[0] if user_lang_row and user_lang_row[0] else "bg"
-            
             logger.info(f"Sending notification to user {user_id} in {lang}")
             
             # Формируем сообщение об изменении на языке пользователя
