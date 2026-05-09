@@ -1101,6 +1101,7 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
     ).fetchall()
     
     logger.info(f"Found {len(favorites_users)} users with this listing in favorites")
+    logger.info(f"User languages: {[(uid, lang) for uid, lang in favorites_users]}")
     
     # Получаем информацию об объявлении
     listing = conn.execute("SELECT * FROM listings WHERE id=?", (listing_id,)).fetchone()
