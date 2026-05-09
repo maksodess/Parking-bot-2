@@ -1951,8 +1951,8 @@ async def handle_successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TY
         )
 
     radius_text = f"{params['radius']//1000} км" if params['radius'] >= 1000 else f"{params['radius']} м"
-    type_text   = TYPE_LABEL.get(params["search_type"], params["search_type"])
-    action_text = ACTION_LABEL.get(params["action"], params["action"])
+    type_text   = get_type_label(params["search_type"], lang)
+    action_text = get_action_label(params["action"], lang)
 
     await update.message.reply_text(
         f"✅ *Плащането е успешно!*\n\n"
@@ -2498,6 +2498,9 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("adm_listings_"):
         logger.info(f"Handling adm_listings: {data}")
+        user_id = query.from_user.id
+        lang = get_user_lang(user_id, ctx)
+        
         page  = int(data.replace("adm_listings_", ""))
         logger.info(f"Page number: {page}")
         ctx.user_data["adm_page"] = page
@@ -2512,10 +2515,20 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
 
         pages = math.ceil(total / PAGE_SIZE) or 1
-        text  = f"📋 *Объявления* (стр. {page+1}/{pages} · всего {total}):\n\n"
+        
+        # Используем язык админа для заголовка
+        header_text = {
+            "bg": f"📋 *Обяви* (стр. {page+1}/{pages} · всего {total}):\n\n",
+            "ru": f"📋 *Объявления* (стр. {page+1}/{pages} · всего {total}):\n\n"
+        }
+        text = header_text.get(lang, header_text["ru"])
+        
         for lid, oname, action, ltype, addr, price, act in rows:
             s = "✅" if act else "⏸"
-            text += f"{s} *#{lid}* · {ACTION_LABEL.get(action,action)} · {TYPE_LABEL.get(ltype,ltype)}\n"
+            # Используем функции с языком админа
+            action_label = get_action_label(action, lang)
+            type_label = get_type_label(ltype, lang)
+            text += f"{s} *#{lid}* · {action_label} · {type_label}\n"
             text += f"   📍 {addr or '—'} · 💰 {price:,.0f}€ · 👤 {oname or '—'}\n\n"
 
         btns = []
@@ -2604,6 +2617,9 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lid, page = int(parts[2]), int(parts[3])
         logger.info(f"Editing listing {lid}, page {page}")
         
+        user_id = query.from_user.id
+        lang = get_user_lang(user_id, ctx)
+        
         await query.answer()
         
         # Сохраняем в user_data для возврата на правильную страницу
@@ -2617,25 +2633,49 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         if not listing:
             logger.warning(f"Listing {lid} not found")
-            await query.answer("Обява не е намерена", show_alert=True)
+            not_found_msg = {
+                "bg": "Обявата не е намерена",
+                "ru": "Объявление не найдено"
+            }
+            await query.answer(not_found_msg.get(lang, not_found_msg["ru"]), show_alert=True)
             return ADMIN_MENU
         
         logger.info(f"Listing found: {listing[0]}")
         
         # Отправляем фото и текст
         photos = get_photos(listing)
-        caption = listing_text(listing)
+        caption = listing_text(listing, lang=lang)
         
         logger.info(f"Photos: {len(photos) if photos else 0}")
         
-        # Кнопки редактирования
+        # Кнопки редактирования с учетом языка
+        btn_labels = {
+            "bg": {
+                "address": "✏️ Адрес",
+                "phone": "✏️ Телефон",
+                "price": "✏️ Цена",
+                "desc": "✏️ Описание",
+                "photo": "✏️ Снимки",
+                "back": "↩️ Назад"
+            },
+            "ru": {
+                "address": "✏️ Адрес",
+                "phone": "✏️ Телефон",
+                "price": "✏️ Цена",
+                "desc": "✏️ Описание",
+                "photo": "✏️ Фото",
+                "back": "↩️ Назад"
+            }
+        }
+        labels = btn_labels.get(lang, btn_labels["ru"])
+        
         edit_btns = [
-            [InlineKeyboardButton("✏️ Адрес",    callback_data=f"adm_editfield_address_{lid}")],
-            [InlineKeyboardButton("✏️ Телефон",  callback_data=f"adm_editfield_phone_{lid}")],
-            [InlineKeyboardButton("✏️ Цена",     callback_data=f"adm_editfield_price_{lid}")],
-            [InlineKeyboardButton("✏️ Описание", callback_data=f"adm_editfield_desc_{lid}")],
-            [InlineKeyboardButton("✏️ Снимки",   callback_data=f"adm_editfield_photo_{lid}")],
-            [InlineKeyboardButton("↩️ Назад",    callback_data=f"adm_listings_{page}")],
+            [InlineKeyboardButton(labels["address"], callback_data=f"adm_editfield_address_{lid}")],
+            [InlineKeyboardButton(labels["phone"],   callback_data=f"adm_editfield_phone_{lid}")],
+            [InlineKeyboardButton(labels["price"],   callback_data=f"adm_editfield_price_{lid}")],
+            [InlineKeyboardButton(labels["desc"],    callback_data=f"adm_editfield_desc_{lid}")],
+            [InlineKeyboardButton(labels["photo"],   callback_data=f"adm_editfield_photo_{lid}")],
+            [InlineKeyboardButton(labels["back"],    callback_data=f"adm_listings_{page}")],
         ]
         
         chat_id = query.message.chat_id
@@ -2678,6 +2718,9 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parts = data.split("_")
         lid, page = int(parts[2]), int(parts[3])
         
+        user_id = query.from_user.id
+        lang = get_user_lang(user_id, ctx)
+        
         # Уведомляем подписчиков избранного перед удалением
         await notify_favorites_deleted(ctx.bot, lid)
         
@@ -2685,7 +2728,12 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.execute("DELETE FROM listings WHERE id=?", (lid,))
         conn.commit()
         conn.close()
-        await query.answer(f"🗑 #{lid} удалено")
+        
+        delete_msg = {
+            "bg": f"🗑 #{lid} изтрито",
+            "ru": f"🗑 #{lid} удалено"
+        }
+        await query.answer(delete_msg.get(lang, delete_msg["ru"]))
         
         # Показываем обновленный список (вместо изменения query.data)
         ctx.user_data["adm_page"] = page
@@ -2698,10 +2746,18 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
 
         pages = math.ceil(total / PAGE_SIZE) or 1
-        text  = f"📋 *Объявления* (стр. {page+1}/{pages} · всего {total}):\n\n"
+        
+        header_text = {
+            "bg": f"📋 *Обяви* (стр. {page+1}/{pages} · всего {total}):\n\n",
+            "ru": f"📋 *Объявления* (стр. {page+1}/{pages} · всего {total}):\n\n"
+        }
+        text = header_text.get(lang, header_text["ru"])
+        
         for lid, oname, action, ltype, addr, price, act in rows:
             s = "✅" if act else "⏸"
-            text += f"{s} *#{lid}* · {ACTION_LABEL.get(action,action)} · {TYPE_LABEL.get(ltype,ltype)}\n"
+            action_label = get_action_label(action, lang)
+            type_label = get_type_label(ltype, lang)
+            text += f"{s} *#{lid}* · {action_label} · {type_label}\n"
             text += f"   📍 {addr or '—'} · 💰 {price:,.0f}€ · 👤 {oname or '—'}\n\n"
 
         btns = []
@@ -2726,22 +2782,38 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         field = parts[2]
         lid = int(parts[3])
         
+        user_id = query.from_user.id
+        lang = get_user_lang(user_id, ctx)
+        
         # Сохраняем контекст для возврата
         ctx.user_data["adm_editfield_lid"] = lid
         ctx.user_data["adm_editfield_field"] = field
         
-        prompts = {
+        prompts_bg = {
             "address": "📍 Въведете нов *адрес*:",
             "phone":   "📞 Въведете нов *телефон* (или «-» за да премахнете):",
             "price":   "💰 Въведете нова *цена* (число, €):",
             "desc":    "📝 Въведете ново *описание* (или «-» за да премахнете):",
             "photo":   "📸 Изпратете нови *снимки* (до 5, или «-» за да премахнете всички):",
         }
+        
+        prompts_ru = {
+            "address": "📍 Введите новый *адрес*:",
+            "phone":   "📞 Введите новый *телефон* (или «-» чтобы удалить):",
+            "price":   "💰 Введите новую *цену* (число, €):",
+            "desc":    "📝 Введите новое *описание* (или «-» чтобы удалить):",
+            "photo":   "📸 Отправьте новые *фото* (до 5, или «-» чтобы удалить все):",
+        }
+        
+        prompts = prompts_ru if lang == "ru" else prompts_bg
+        default_prompt = "Введите новое значение:" if lang == "ru" else "Въведете нова стойност:"
+        cancel_btn = "❌ Отмена" if lang == "ru" else "❌ Отказ"
+        
         await query.message.reply_text(
-            prompts.get(field, "Въведете нова стойност:"),
+            prompts.get(field, default_prompt),
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("❌ Отказ", callback_data="go_home")
+                InlineKeyboardButton(cancel_btn, callback_data="go_home")
             ]])
         )
         return EDIT_FIELD
@@ -2751,9 +2823,22 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def admin_broadcast_send(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return MAIN_MENU
+    
+    user_id = update.effective_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     text = update.message.text.strip()
-    if text.lower() == "отмена":
-        await update.message.reply_text("❌ Отменено.", reply_markup=admin_keyboard())
+    
+    # Проверка на отмену на обоих языках
+    if text.lower() in ["отмена", "отказ"]:
+        cancel_msg = {
+            "bg": "❌ Отказано.",
+            "ru": "❌ Отменено."
+        }
+        await update.message.reply_text(
+            cancel_msg.get(lang, cancel_msg["ru"]), 
+            reply_markup=admin_keyboard(lang)
+        )
         return ADMIN_MENU
     conn = db()
     uids = set(
@@ -2775,7 +2860,7 @@ async def admin_broadcast_send(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             failed += 1
     await update.message.reply_text(
         f"✅ Готово! Отправлено: {sent} / Не доставлено: {failed}",
-        reply_markup=admin_keyboard()
+        reply_markup=admin_keyboard(lang)
     )
     return ADMIN_MENU
 
