@@ -222,17 +222,6 @@ def get_type_label(ltype, lang='bg'):
               'ru': {'parking': '🅿️ Парковочное место', 'garage': '🚘 Гараж', 'all': '📋 Всё'}}
     return labels.get(lang, labels['bg']).get(ltype, ltype)
 
-ACTION_LABEL = {
-    "buy":   "🛒 Купува",
-    "sell":  "💰 Продава",
-    "rent":  "🔑 Наем",
-    "lease": "📋 Под наем",
-}
-TYPE_LABEL = {
-    "parking": "🅿️ Паркомясто",
-    "garage":  "🚘 Гараж",
-    "all":     "📋 Всичко",
-}
 
 
 def has_purchased_contacts(buyer_id: int, listing_id: int) -> bool:
@@ -1108,9 +1097,9 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
     
     # Получаем информацию об объявлении
     listing = conn.execute("SELECT * FROM listings WHERE id=?", (listing_id,)).fetchone()
-    conn.close()
     
     if not listing or not favorites_users:
+        conn.close()
         return
     
     # Отправляем уведомления с полным объявлением
@@ -1118,8 +1107,9 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
     
     for (user_id,) in favorites_users:
         try:
-            # Получаем язык каждого пользователя
-            lang = get_user_lang(user_id)
+            # Получаем язык каждого пользователя напрямую из БД
+            user_lang_row = conn.execute("SELECT lang FROM users WHERE user_id=?", (user_id,)).fetchone()
+            lang = user_lang_row[0] if user_lang_row and user_lang_row[0] else "bg"
             
             # Формируем сообщение об изменении на языке пользователя
             if field == "price":
@@ -1188,6 +1178,8 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
             await asyncio.sleep(0.05)
         except Exception as e:
             logger.error(f"Failed to notify favorites user {user_id}: {e}", exc_info=True)
+    
+    conn.close()
 
 
 async def notify_favorites_deleted(bot, listing_id: int):
@@ -1206,15 +1198,18 @@ async def notify_favorites_deleted(bot, listing_id: int):
     # Удаляем из избранного
     conn.execute("DELETE FROM favorites WHERE listing_id=?", (listing_id,))
     conn.commit()
-    conn.close()
     
     if not listing or not favorites_users:
+        conn.close()
         return
     
     # Отправляем уведомления на языке каждого пользователя
     for (user_id,) in favorites_users:
         try:
-            lang = get_user_lang(user_id)
+            # Получаем язык каждого пользователя напрямую из БД
+            user_lang_row = conn.execute("SELECT lang FROM users WHERE user_id=?", (user_id,)).fetchone()
+            lang = user_lang_row[0] if user_lang_row and user_lang_row[0] else "bg"
+            
             await bot.send_message(
                 user_id,
                 t("notify_listing_deleted", lang, lid=listing_id, address=listing[5] or '—'),
@@ -1224,6 +1219,8 @@ async def notify_favorites_deleted(bot, listing_id: int):
             await asyncio.sleep(0.05)
         except Exception as e:
             logger.error(f"Failed to notify favorites deletion to user {user_id}: {e}", exc_info=True)
+    
+    conn.close()
 
 
 async def notify_subscribers(ctx, listing_id: int, action: str, ltype: str, lat: float, lon: float, price: float):
@@ -1428,6 +1425,13 @@ async def search_geo_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["search_lat"] = loc.latitude
     ctx.user_data["search_lon"] = loc.longitude
     
+    # Убираем кнопку геолокации
+    await update.message.reply_text(
+        "​",  # Невидимый символ
+        reply_markup=ReplyKeyboardRemove()
+    )
+    
+    # Показываем выбор радиуса
     await update.message.reply_text(
         t("choose_radius", lang),
         parse_mode="Markdown", 
@@ -2518,6 +2522,9 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return ADMIN_MENU
 
     elif data == "adm_stats":
+        user_id = query.from_user.id
+        lang = get_user_lang(user_id, ctx)
+        
         conn    = db()
         total   = conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
         active  = conn.execute("SELECT COUNT(*) FROM listings WHERE active=1").fetchone()[0]
@@ -2530,18 +2537,17 @@ async def admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         msgs    = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
         conn.close()
         await query.edit_message_text(
-            f"📊 *Статистика:*\n\n"
-            f"📋 Всего: {total} · Активни: {active}\n"
-            f"💰 Продажа: {sell} · 📋 Аренда: {lease}\n"
-            f"🅿️ Парковок: {parking} · 🚘 Гаражей: {garage}\n"
-            f"🗺 С геолокацией: {geo}\n\n"
-            f"👥 Потребители: {users} · ✉️ Сообщений: {msgs}",
+            t("admin_stats", lang, total=total, active=active, sell=sell, lease=lease, 
+              parking=parking, garage=garage, geo=geo, users=users, msgs=msgs),
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("↩️ В меню", callback_data="adm_menu")]]))
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_back_menu", lang), callback_data="adm_menu")]]))
         return ADMIN_MENU
 
     elif data == "adm_broadcast":
-        await query.edit_message_text("📢 Введите текст рассылки (или «отмена»):")
+        user_id = query.from_user.id
+        lang = get_user_lang(user_id, ctx)
+        
+        await query.edit_message_text(t("admin_broadcast_prompt", lang))
         return ADMIN_BROADCAST
 
     elif data.startswith("adm_edit_"):
@@ -3303,7 +3309,10 @@ def main():
             ).fetchall()
             for lid, owner_id in rows:
                 try:
-                    lang = get_user_lang(owner_id)
+                    # Получаем язык пользователя напрямую из БД
+                    user_lang_row = conn.execute("SELECT lang FROM users WHERE user_id=?", (owner_id,)).fetchone()
+                    lang = user_lang_row[0] if user_lang_row and user_lang_row[0] else "bg"
+                    
                     await context.bot.send_message(
                         owner_id,
                         t("confirm_listing_prompt", lang, lid=lid),
