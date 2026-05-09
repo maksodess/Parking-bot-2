@@ -1432,18 +1432,22 @@ async def search_geo_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["search_lat"] = loc.latitude
     ctx.user_data["search_lon"] = loc.longitude
     
-    # Убираем кнопку геолокации
-    await update.message.reply_text(
-        "​",  # Невидимый символ
-        reply_markup=ReplyKeyboardRemove()
-    )
-    
-    # Показываем выбор радиуса
+    # Показываем выбор радиуса с удалением клавиатуры геолокации
     await update.message.reply_text(
         t("choose_radius", lang),
         parse_mode="Markdown", 
         reply_markup=radius_keyboard(lang)
     )
+    
+    # Убираем кнопку геолокации отдельным сообщением
+    try:
+        await update.message.reply_text(
+            "✓",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    except:
+        pass
+    
     return SEARCH_RADIUS
 
 async def search_radius_chosen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
