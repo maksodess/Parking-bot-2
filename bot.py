@@ -1427,13 +1427,10 @@ async def search_geo_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     loc = update.message.location
     ctx.user_data["search_lat"] = loc.latitude
     ctx.user_data["search_lon"] = loc.longitude
+    
     await update.message.reply_text(
         t("choose_radius", lang),
         parse_mode="Markdown", 
-        reply_markup=ReplyKeyboardRemove()  # Убираем кнопку геолокации
-    )
-    await update.message.reply_text(
-        t("choose_radius", lang),
         reply_markup=radius_keyboard(lang)
     )
     return SEARCH_RADIUS
@@ -1582,12 +1579,12 @@ async def show_search_page(message, ctx, page=0):
         ).fetchone()
         conn.close()
 
-        fav_text = "💔 Премахни от любими" if in_fav else "⭐ В любими"
+        fav_text = t("btn_remove_from_fav", lang) if in_fav else t("btn_add_to_fav", lang)
         fav_action = f"unfav_{lid}" if in_fav else f"fav_{lid}"
         
         if dist is not None:
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🗺 На картата", callback_data=f"map_{lid}"),
+                [InlineKeyboardButton(t("btn_on_map", lang), callback_data=f"map_{lid}"),
                  InlineKeyboardButton(fav_text, callback_data=fav_action)],
             ])
         else:
@@ -1609,10 +1606,10 @@ async def show_search_page(message, ctx, page=0):
     
     # Кнопка "Вперед" если не последняя страница
     if page < total_pages - 1:
-        nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"search_page_{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(t("btn_next_page", lang), callback_data=f"search_page_{page+1}"))
     
     # Кнопка "На главную" всегда
-    home_button = [InlineKeyboardButton("🏠 Начало", callback_data="go_home")]
+    home_button = [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]
     
     # Формируем клавиатуру
     keyboard_rows = []
@@ -1622,7 +1619,7 @@ async def show_search_page(message, ctx, page=0):
     
     # Отправляем сообщение с навигацией
     await message.reply_text(
-        f"📄 Страница {page + 1} от {total_pages} (общо {total} обяви)",
+        t("page_info", lang, page=page+1, total_pages=total_pages, total_listings=total),
         reply_markup=InlineKeyboardMarkup(keyboard_rows)
     )
 
@@ -2778,11 +2775,11 @@ async def show_my_listings_page(message, ctx, page=0):
     # Отправляем объявления
     for row in page_listings:
         lid, active = row[0], row[12]
-        caption = listing_text(row)
-        status = "✅ Активна" if active else "⏸ Неактивна"
+        caption = listing_text(row, lang=lang)
+        status = t("listing_status_active", lang) if active else t("listing_status_inactive", lang)
         buttons = [
-            [InlineKeyboardButton("✏️ Редактиране", callback_data=f"edit_{lid}"),
-             InlineKeyboardButton("🗑 Изтрий",      callback_data=f"delete_{lid}")],
+            [InlineKeyboardButton(t("btn_edit", lang), callback_data=f"edit_{lid}"),
+             InlineKeyboardButton(t("btn_delete", lang), callback_data=f"delete_{lid}")],
         ]
         kb2 = InlineKeyboardMarkup(buttons)
         await send_listing(message, f"{caption}\n\n{status}", row, kb2)
@@ -2790,13 +2787,11 @@ async def show_my_listings_page(message, ctx, page=0):
     
     # Кнопки навигации
     nav_buttons = []
-    # Кнопки навигации
-    nav_buttons = []
     
     if page < total_pages - 1:
-        nav_buttons.append(InlineKeyboardButton("Напред ▶️", callback_data=f"my_page_{page+1}"))
+        nav_buttons.append(InlineKeyboardButton(t("btn_next_page", lang), callback_data=f"my_page_{page+1}"))
     
-    home_button = [InlineKeyboardButton("🏠 Начало", callback_data="go_home")]
+    home_button = [InlineKeyboardButton(t("btn_home", lang), callback_data="go_home")]
     
     keyboard_rows = []
     if nav_buttons:
@@ -2804,7 +2799,7 @@ async def show_my_listings_page(message, ctx, page=0):
     keyboard_rows.append(home_button)
     
     await message.reply_text(
-        f"📄 Страница {page + 1} от {total_pages} (общо {total} обяви)",
+        t("page_info", lang, page=page+1, total_pages=total_pages, total_listings=total),
         reply_markup=InlineKeyboardMarkup(keyboard_rows)
     )
 
@@ -3299,14 +3294,14 @@ def main():
             ).fetchall()
             for lid, owner_id in rows:
                 try:
+                    lang = get_user_lang(owner_id)
                     await context.bot.send_message(
                         owner_id,
-                        f"⏰ *Обява #{lid}* е публикувана преди повече от 7 дни.\n\n"
-                        f"Все още ли е актуална? Потвърдете в рамките на 48 часа, иначе ще бъде изтрита автоматично.",
+                        t("confirm_listing_prompt", lang, lid=lid),
                         parse_mode="Markdown",
                         reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("✅ Да, актуална е", callback_data=f"confirm_listing_{lid}")],
-                            [InlineKeyboardButton("🗑 Изтрий я",       callback_data=f"delete_{lid}")],
+                            [InlineKeyboardButton(t("btn_confirm_active", lang), callback_data=f"confirm_listing_{lid}")],
+                            [InlineKeyboardButton(t("btn_delete_it", lang), callback_data=f"delete_{lid}")],
                         ])
                     )
                     # Обновляем confirmed_at чтобы не слать повторно
