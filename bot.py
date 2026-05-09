@@ -12,6 +12,7 @@ import re
 import datetime
 import asyncio
 from contextlib import contextmanager
+import aiohttp  # Для Yandex Geocoder API
 
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup,
@@ -26,7 +27,8 @@ from telegram.ext import (
 from messages import t, get_user_lang, set_user_lang, detect_telegram_lang
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВАШ_ТОКЕН_ЗДЕСЬ")
-ADMIN_ID   = 5053888378
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "5053888378"))
+YANDEX_API_KEY = os.environ.get("YANDEX_GEOCODER_API_KEY", "")
 
 # ── Paths configuration (Railway Volumes) ─────────────────
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
@@ -152,57 +154,142 @@ def init_db():
 _geocode_cache: dict = {}
 _geocode_lock = asyncio.Lock() if False else None  # инициализируем в runtime
 
-async def geocode(address: str):
-    """Асинхронный геокодинг с кэшем."""
-    if address in _geocode_cache:
-        return _geocode_cache[address]
-
-    query = f"{address}, Варна, България"
-    url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode({
-        "q": query, "format": "json", "limit": 1, "countrycodes": "bg",
-    })
+async def geocode(address: str, lang: str = "ru_RU"):
+    """
+    Асинхронный геокодинг через Yandex Geocoder API с кэшем.
+    
+    Args:
+        address: Адрес для поиска
+        lang: Язык ответа (ru_RU, bg_BG, en_US)
+    
+    Returns:
+        tuple: (latitude, longitude, formatted_address) или None
+    """
+    # Проверяем кэш
+    cache_key = f"{address}_{lang}"
+    if cache_key in _geocode_cache:
+        return _geocode_cache[cache_key]
+    
+    if not YANDEX_API_KEY:
+        logger.error("YANDEX_GEOCODER_API_KEY not set!")
+        return None
+    
+    # Добавляем "Варна" для лучшей точности
+    search_query = f"{address}, Варна, Болгария" if "варна" not in address.lower() and "varna" not in address.lower() else address
+    
+    params = {
+        "apikey": YANDEX_API_KEY,
+        "geocode": search_query,
+        "format": "json",
+        "results": 1,
+        "lang": lang,
+        "kind": "house"
+    }
+    
     try:
-        loop = asyncio.get_event_loop()
-        req = urllib.request.Request(url, headers={"User-Agent": "ParkPlaceVarnaBot/1.0"})
-        def _fetch():
-            with urllib.request.urlopen(req, timeout=8) as r:
-                return json.loads(r.read())
-        data = await loop.run_in_executor(None, _fetch)
-        if data:
-            result = float(data[0]["lat"]), float(data[0]["lon"]), data[0]["display_name"]
-            _geocode_cache[address] = result
-            return result
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://geocode-maps.yandex.ru/1.x/",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=8)
+            ) as resp:
+                if resp.status != 200:
+                    logger.error(f"Yandex Geocoder error: HTTP {resp.status}")
+                    return None
+                
+                data = await resp.json()
+                
+                members = data.get("response", {}).get("GeoObjectCollection", {}).get("featureMember", [])
+                if not members:
+                    logger.info(f"No geocoding results for: {address}")
+                    return None
+                
+                geo_object = members[0]["GeoObject"]
+                
+                # ВАЖНО: Yandex возвращает координаты в формате "lon lat"!
+                pos = geo_object["Point"]["pos"].split()
+                longitude, latitude = float(pos[0]), float(pos[1])
+                
+                # Форматированный адрес
+                formatted = geo_object["metaDataProperty"]["GeocoderMetaData"]["text"]
+                
+                # Убираем "Болгария, " для компактности
+                if formatted.startswith("Болгария, "):
+                    formatted = formatted[10:]
+                
+                result = (latitude, longitude, formatted)
+                _geocode_cache[cache_key] = result
+                
+                logger.info(f"Geocoded via Yandex: '{address}' → {latitude:.6f}, {longitude:.6f}")
+                return result
+                
+    except asyncio.TimeoutError:
+        logger.error(f"Yandex Geocoder timeout for: {address}")
     except Exception as e:
         logger.error(f"Geocode error: {e}")
+    
     return None
 
-async def reverse_geocode(lat: float, lon: float):
-    """Асинхронный обратный геокодинг."""
-    url = "https://nominatim.openstreetmap.org/reverse?" + urllib.parse.urlencode({
-        "lat": lat, "lon": lon, "format": "json", "accept-language": "bg,en",
-        "zoom": 18,
-    })
+async def reverse_geocode(lat: float, lon: float, lang: str = "ru_RU"):
+    """
+    Асинхронный обратный геокодинг через Yandex Geocoder API.
+    Координаты → адрес.
+    
+    Args:
+        lat: Широта
+        lon: Долгота
+        lang: Язык ответа (ru_RU, bg_BG)
+    
+    Returns:
+        str: Форматированный адрес или None
+    """
+    if not YANDEX_API_KEY:
+        logger.error("YANDEX_GEOCODER_API_KEY not set!")
+        return None
+    
+    # ВАЖНО: Для reverse geocoding формат "lon,lat" (не lat,lon!)
+    params = {
+        "apikey": YANDEX_API_KEY,
+        "geocode": f"{lon},{lat}",
+        "format": "json",
+        "results": 1,
+        "lang": lang,
+        "kind": "house"
+    }
+    
     try:
-        loop = asyncio.get_event_loop()
-        req = urllib.request.Request(url, headers={"User-Agent": "ParkPlaceVarnaBot/1.0"})
-        def _fetch():
-            with urllib.request.urlopen(req, timeout=8) as r:
-                return json.loads(r.read())
-        data = await loop.run_in_executor(None, _fetch)
-        addr = data.get("address", {})
-        parts = []
-        road = addr.get("road") or addr.get("pedestrian") or addr.get("residential")
-        if road:
-            house = addr.get("house_number")
-            parts.append(f"{road} {house}" if house else road)
-        suburb = addr.get("suburb") or addr.get("neighbourhood") or addr.get("city_district")
-        if suburb:
-            parts.append(suburb)
-        if parts:
-            return ", ".join(parts)
-        return data.get("display_name", "").split(",")[0]
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://geocode-maps.yandex.ru/1.x/",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=8)
+            ) as resp:
+                if resp.status != 200:
+                    logger.error(f"Yandex reverse geocoding error: HTTP {resp.status}")
+                    return None
+                
+                data = await resp.json()
+                
+                members = data.get("response", {}).get("GeoObjectCollection", {}).get("featureMember", [])
+                if not members:
+                    logger.info(f"No reverse geocoding result for: {lat}, {lon}")
+                    return None
+                
+                geo_object = members[0]["GeoObject"]
+                address = geo_object["metaDataProperty"]["GeocoderMetaData"]["text"]
+                
+                # Убираем "Болгария, " из начала
+                if address.startswith("Болгария, "):
+                    address = address[10:]
+                
+                logger.info(f"Reverse geocoded via Yandex: {lat:.6f}, {lon:.6f} → '{address}'")
+                return address
+                
+    except asyncio.TimeoutError:
+        logger.error("Yandex reverse geocoding timeout")
     except Exception as e:
         logger.error(f"Reverse geocode error: {e}")
+    
     return None
 
 # ── Haversine ─────────────────────────────────────────────────
@@ -733,7 +820,10 @@ async def ad_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     address = update.message.text.strip()
     await update.message.reply_text(t("ad_searching", lang))
-    result = await geocode(address)
+    
+    # Используем Yandex Geocoder с нужным языком
+    yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
+    result = await geocode(address, yandex_lang)
     if not result:
         await update.message.reply_text(
             t("ad_not_found", lang),
@@ -829,7 +919,9 @@ async def ad_location_geo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             t("ad_detecting_address", lang),
             reply_markup=ReplyKeyboardRemove()  # Убираем кнопку
         )
-        addr = await reverse_geocode(loc.latitude, loc.longitude)
+        # Используем Yandex reverse geocoding с нужным языком
+        yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
+        addr = await reverse_geocode(loc.latitude, loc.longitude, yandex_lang)
         if addr:
             ctx.user_data["ad"]["address"] = addr if isinstance(addr, str) else ", ".join(addr)
             msg = t("ad_geo_saved", lang) + f"\n📍 *{ctx.user_data['ad']['address']}*\n\n"
@@ -1419,7 +1511,10 @@ async def search_address_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     address = update.message.text.strip()
     await update.message.reply_text(t("search_searching", lang))
-    result = await geocode(address)
+    
+    # Используем Yandex Geocoder с нужным языком
+    yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
+    result = await geocode(address, yandex_lang)
     if not result:
         await update.message.reply_text(
             t("search_not_found", lang)
@@ -2254,7 +2349,9 @@ async def editfield_save(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lang = get_user_lang(user_id, ctx)
 
     if field == "address":
-        result = await geocode(text)
+        # Используем Yandex Geocoder с нужным языком
+        yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
+        result = await geocode(text, yandex_lang)
         if result:
             lat, lon, display = result
             conn.execute("UPDATE listings SET address=?, lat=?, lon=? WHERE id=?", (display, lat, lon, lid))
@@ -2445,7 +2542,8 @@ async def fix_addresses_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Определяем что адрес "похож на координаты": содержит запятую и числа
         looks_like_coords = bool(re.match(r'^-?\d+\.\d+,\s*-?\d+\.\d+$', addr or ''))
         if looks_like_coords:
-            new_addr = await reverse_geocode(lat, lon)
+            # Используем Yandex reverse geocoding (по умолчанию русский)
+            new_addr = await reverse_geocode(lat, lon, "ru_RU")
             if new_addr:
                 new_addr_str = new_addr if isinstance(new_addr, str) else ", ".join(new_addr)
                 conn.execute("UPDATE listings SET address=? WHERE id=?", (new_addr_str, lid))
