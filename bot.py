@@ -1093,7 +1093,7 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
     
     # Находим всех пользователей, у которых это объявление в избранном + их языки
     favorites_users = conn.execute(
-        """SELECT f.user_id, COALESCE(u.lang, 'bg') as lang
+        """SELECT f.user_id, COALESCE(u.language, 'bg') as lang
            FROM favorites f
            LEFT JOIN users u ON f.user_id = u.user_id
            WHERE f.listing_id=?""",
@@ -1194,9 +1194,12 @@ async def notify_favorites_deleted(bot, listing_id: int):
     """Уведомляет пользователей об удалении объявления из избранного."""
     conn = db()
     
-    # Находим всех пользователей, у которых это объявление в избранном
+    # Находим всех пользователей, у которых это объявление в избранном + их языки
     favorites_users = conn.execute(
-        "SELECT user_id FROM favorites WHERE listing_id=?",
+        """SELECT f.user_id, COALESCE(u.language, 'bg') as lang
+           FROM favorites f
+           LEFT JOIN users u ON f.user_id = u.user_id
+           WHERE f.listing_id=?""",
         (listing_id,)
     ).fetchall()
     
@@ -1212,12 +1215,8 @@ async def notify_favorites_deleted(bot, listing_id: int):
         return
     
     # Отправляем уведомления на языке каждого пользователя
-    for (user_id,) in favorites_users:
+    for (user_id, lang) in favorites_users:
         try:
-            # Получаем язык каждого пользователя напрямую из БД
-            user_lang_row = conn.execute("SELECT lang FROM users WHERE user_id=?", (user_id,)).fetchone()
-            lang = user_lang_row[0] if user_lang_row and user_lang_row[0] else "bg"
-            
             await bot.send_message(
                 user_id,
                 t("notify_listing_deleted", lang, lid=listing_id, address=listing[5] or '—'),
@@ -3323,15 +3322,14 @@ def main():
         cutoff = (datetime.datetime.now() - datetime.timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         with get_db() as conn:
             rows = conn.execute(
-                "SELECT id, owner_id FROM listings WHERE active=1 AND confirmed_at < ?",
+                """SELECT l.id, l.owner_id, COALESCE(u.language, 'bg') as lang
+                   FROM listings l
+                   LEFT JOIN users u ON l.owner_id = u.user_id
+                   WHERE l.active=1 AND l.confirmed_at < ?""",
                 (cutoff,)
             ).fetchall()
-            for lid, owner_id in rows:
+            for lid, owner_id, lang in rows:
                 try:
-                    # Получаем язык пользователя напрямую из БД
-                    user_lang_row = conn.execute("SELECT lang FROM users WHERE user_id=?", (owner_id,)).fetchone()
-                    lang = user_lang_row[0] if user_lang_row and user_lang_row[0] else "bg"
-                    
                     await context.bot.send_message(
                         owner_id,
                         t("confirm_listing_prompt", lang, lid=lid),
