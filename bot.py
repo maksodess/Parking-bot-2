@@ -323,6 +323,9 @@ async def get_address_for_user(lat: float, lon: float, stored_address: str, lang
     try:
         address = await reverse_geocode(lat, lon, lang)
         if address:
+            # Очистка адреса от избыточной информации для Варны
+            address = _clean_varna_address(address)
+            
             _reverse_geocode_cache[cache_key] = address
             logger.info(f"Address translated to {lang}: {stored_address} → {address}")
             return address
@@ -331,6 +334,42 @@ async def get_address_for_user(lat: float, lon: float, stored_address: str, lang
     
     # Fallback на сохранённый адрес
     return stored_address
+
+
+def _clean_varna_address(address: str) -> str:
+    """
+    Убирает избыточную информацию из адресов в Варне.
+    
+    Преобразует:
+    "область Варна, Община-"Варна", Варна, улица Зеленика, 22"
+    в:
+    "Варна, улица Зеленика, 22"
+    """
+    if not address:
+        return address
+    
+    # Список префиксов для удаления
+    prefixes_to_remove = [
+        "Болгария, область Варна, Община-\"Варна\", ",
+        "България, област Варна, Община-\"Варна\", ",
+        "область Варна, Община-\"Варна\", ",
+        "област Варна, Община-\"Варна\", ",
+        "Болгария, област Варна, ",
+        "България, област Варна, ",
+        "Болгария, область Варна, ",
+        "область Варна, ",
+        "област Варна, ",
+        "Болгария, ",
+        "България, ",
+    ]
+    
+    cleaned = address
+    for prefix in prefixes_to_remove:
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix):]
+            break  # Удаляем только первый совпавший префикс
+    
+    return cleaned
 
 # ── Haversine ─────────────────────────────────────────────────
 def haversine(lat1, lon1, lat2, lon2):
@@ -1849,15 +1888,28 @@ async def show_map(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     lid = int(query.data.split("_")[1])
     
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
+    
     conn = db()
     row = conn.execute("SELECT lat, lon, address FROM listings WHERE id=?", (lid,)).fetchone()
     conn.close()
     
     if row and row[0]:
-        await query.message.reply_location(latitude=row[0], longitude=row[1])
-        await query.message.reply_text(f"📍 {row[2]}")
+        lat, lon, stored_address = row
+        
+        # Показываем адрес на языке пользователя (как в объявлении)
+        yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
+        user_address = await get_address_for_user(lat, lon, stored_address, yandex_lang)
+        
+        await query.message.reply_location(latitude=lat, longitude=lon)
+        await query.message.reply_text(f"📍 {user_address}")
     else:
-        await query.answer("Геолокацията не е указана", show_alert=True)
+        not_found_msg = {
+            "bg": "Геолокацията не е указана",
+            "ru": "Геолокация не указана"
+        }
+        await query.answer(not_found_msg.get(lang, not_found_msg["bg"]), show_alert=True)
     
     return MAIN_MENU
 
@@ -2577,6 +2629,9 @@ async def show_map(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     lid = int(query.data.split("_")[1])
+    
+    user_id = query.from_user.id
+    lang = get_user_lang(user_id, ctx)
 
     with get_db() as conn:
         row = conn.execute("SELECT lat, lon, address FROM listings WHERE id=?", (lid,)).fetchone()
@@ -2584,12 +2639,21 @@ async def show_map(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.execute("UPDATE listings SET views = COALESCE(views, 0) + 1 WHERE id=?", (lid,))
 
     if not row or not row[0]:
-        await query.answer("Геолокацията не е налична", show_alert=True)
+        not_found_msg = {
+            "bg": "Геолокацията не е налична",
+            "ru": "Геолокация недоступна"
+        }
+        await query.answer(not_found_msg.get(lang, not_found_msg["bg"]), show_alert=True)
         return MAIN_MENU
 
-    lat, lon, address = row
+    lat, lon, stored_address = row
+    
+    # Показываем адрес на языке пользователя (как в объявлении)
+    yandex_lang = "ru_RU" if lang == "ru" else "bg_BG"
+    user_address = await get_address_for_user(lat, lon, stored_address, yandex_lang)
+    
     await query.message.reply_location(latitude=lat, longitude=lon)
-    await query.message.reply_text(f"📍 {address}")
+    await query.message.reply_text(f"📍 {user_address}")
     return MAIN_MENU
 async def fix_addresses_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Админская команда: переопределяет адрес для всех обявиений где address выглядит как координаты."""
