@@ -1101,7 +1101,6 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
     if not listing or not favorites_users:
         conn.close()
         return
-        return
     
     # Отправляем уведомления с полным объявлением
     photos = get_photos(listing)
@@ -1149,6 +1148,7 @@ async def notify_favorites_changes(bot, listing_id: int, field: str, old_value, 
             
             if photos and len(photos) > 1:
                 # Несколько фото - отправляем media group + текст с кнопками отдельно
+                from telegram import InputMediaPhoto
                 media_group = [InputMediaPhoto(media=photo) for photo in photos]
                 await bot.send_media_group(user_id, media=media_group)
                 await bot.send_message(
